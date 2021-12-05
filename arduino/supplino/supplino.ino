@@ -3,6 +3,8 @@
  quick&dirty PSU
  by @cyb3rn0id and @mrloba81
  https://www.github.com/settorezero/supplino
+
+  WORK IN PROGRESS, CODE NOT WORKING
 */
 
 #include <SPI.h>
@@ -10,11 +12,11 @@
 #include "ACS712.h" // ACS712 by Rob Tillaart, Pete Thompson
 
 // ST7735 display to Arduino nano connections:
-// CLK    : 13 
+// CLK    : 13 (or SCL)
 // SDA    : 11
-// RS     :  9 (called also 'CD' or 'A0' on display)
+// RS     :  9 (or CD or A0)
 // CS     : 10
-// RST    :  8
+// RST    :  8 (or RES)
 
 // display instance using software SPI (first) or hardware SPI (second)
 //Ucglib_ST7735_18x128x160_SWSPI ucg(/*sclk=*/ 13, /*data=*/ 11, /*cd=*/ 9, /*cs=*/ 10, /*reset=*/ 8); // for software SPI
@@ -23,8 +25,8 @@ Ucglib_ST7735_18x128x160_HWSPI ucg(9, 10, 8);
 
 #define VOLTAGE_SENSE A0 // voltage divider on A0 for reading voltage output from switching regulator
 #define CURRENT_SENSE A1 // analog output from ACS712 current sensor
-#define RELAY
-#define BUTTON
+#define RELAY 4 // relay attached on D4
+#define BUTTON 3 // button attached on D3 (interrupt)
 bool alarm=false;
 
 #define READINGS   10   // number of analog readings
