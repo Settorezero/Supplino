@@ -4,7 +4,7 @@
  by @cyb3rn0id and @mrloba81
  https://www.github.com/settorezero/supplino
 
-  WORK IN PROGRESS, CODE NOT WORKING
+ WORK IN PROGRESS, CODE NOT WORKING
 */
 
 #include <SPI.h>
@@ -23,12 +23,15 @@
 //Ucglib_ST7735_18x128x160_HWSPI ucg(/*cd=*/ 9, /*cs=*/ 10, /*reset=*/ 8); // for hardware SPI
 Ucglib_ST7735_18x128x160_HWSPI ucg(9, 10, 8);
 
+// Used GPIOs
+// 8,9,10,11,13 not available since used by display
 #define VOLTAGE_SENSE A0 // voltage divider on A0 for reading voltage output from switching regulator
 #define CURRENT_SENSE A1 // analog output from ACS712 current sensor
-#define RELAY 4 // relay attached on D4
-#define BUTTON 3 // button attached on D3 (interrupt)
-bool alarm=false;
+#define RELAY          4 // relay attached on D4
+#define BUTTON         3 // button attached on D3 (used interrupt)
 
+bool alarm=false;
+bool outputEnabled=false;
 #define READINGS   10   // number of analog readings
 #define CURRENTMAX 5000 // mA
 #define VOLTAGEMAX 40   // V
@@ -58,8 +61,30 @@ struct DrawContext
   bool first_start;
   } voltageCtx, currentCtx;
 
+void buttonPress(void)
+ {
+ // ISR at button pressing 
+ static long lastPress;
+ }
+
+void outputEnable(void)
+ {
+ // toggle relay allowing power output
+ outputEnabled=true;
+ }
+
+void outputDisable(void)
+ {
+ // toggle relay disabling power output
+ outputEnabled=false;
+ }
+
 void setup(void)
   {
+  pinMode(RELAY, OUTPUT);
+  outputDisable();
+  pinMode(BUTTON, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(BUTTON), buttonPress, FALLING);
   Serial.begin(9600);
   voltageCtx.old_val = -999;
   voltageCtx.ltx = 0; // Saved x coord of bottom of pointer
@@ -131,7 +156,6 @@ void loop(void)
   ucg.print("  ");
   ucg.setPrintPos(G1_X + G1_RADIUS + 27, G1_Y - 10);
   ucg.print("V");
-
 
   ucg.setPrintPos(G2_X + G2_RADIUS + 27, G2_Y - 33);
   if (current > CURRENTMAX)
