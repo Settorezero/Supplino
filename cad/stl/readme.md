@@ -17,5 +17,5 @@ Back panel contains input socket, fuse holder
 There are 2 slots too: one for the relay module and another for the  LM2596S step-down regulator. Arduino Nano and current sensor ACS712 breakbout board will be mounted on the protoboard.
 Front panel contains pushbutton, display, output sockets, potentiometer
 Back panel contains toggle switch, input socket, fuse holder
-- Dimensions:
+- Dimensions: 160x155x55 (Width x Depth x Height)
 - Thickness: 2mm
