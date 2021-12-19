@@ -32,7 +32,8 @@ Ucglib_ST7735_18x128x160_HWSPI ucg(9, 10, 8);
 
 bool alarm=false;
 bool outputEnabled=false;
-#define READINGS   10   // number of analog readings
+#define RELAY_ON   false // relay board active low
+#define READINGS   20   // number of analog readings
 #define CURRENTMAX 5000 // mA
 #define VOLTAGEMAX 40   // V
 
@@ -63,28 +64,56 @@ struct DrawContext
 
 void buttonPress(void)
  {
- // ISR at button pressing 
- static long lastPress;
+ // ISR at button pressing
+ noInterrupts();
+ static long lastPress=0;
+ if ((millis()-lastPress) < 200)
+    {
+    // exit if <200mS press
+    lastPress=millis();
+    interrupts();
+    return;  
+    }
+ // in an alarm status, first press reset the alarm
+ // second press will re-enable the power output
+ if (alarm)
+    {
+    alarm=false;
+    lastPress=millis();
+    interrupts();
+    return;
+    }
+ outputEnabled?outputDisable():outputEnable();
+ while(!digitalRead(BUTTON));
+ lastPress=millis();
+ interrupts();
  }
 
 void outputEnable(void)
  {
  // toggle relay allowing power output
  outputEnabled=true;
+ digitalWrite(RELAY,RELAY_ON);
  }
 
 void outputDisable(void)
  {
  // toggle relay disabling power output
  outputEnabled=false;
+ digitalWrite(RELAY, !RELAY_ON);
  }
 
+void setAlarm(void)
+  {
+  outputDisable();
+  alarm=true;  
+  }
+  
 void setup(void)
   {
   pinMode(RELAY, OUTPUT);
   outputDisable();
   pinMode(BUTTON, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(BUTTON), buttonPress, FALLING);
   Serial.begin(9600);
   voltageCtx.old_val = -999;
   voltageCtx.ltx = 0; // Saved x coord of bottom of pointer
@@ -98,10 +127,13 @@ void setup(void)
   currentCtx.osy = 0;
   currentCtx.first_start = true;
 
+  delay(1000);
+  
   // measure zero current
   ACS.autoMidPoint();
-
-  delay(1000);
+  ACS.autoMidPoint();
+  ACS.autoMidPoint();
+  
   ucg.begin(UCG_FONT_MODE_TRANSPARENT);
   ucg.clearScreen();
   ucg.setRotate270(); // 90=display horizontal (landscape) with data header on the left
@@ -114,34 +146,44 @@ void setup(void)
   // void drawGauge(uint8_t x, uint8_t y, uint8_t arc, uint8_t radius, uint8_t stp, uint8_t tickl, float gaugemin, float gaugemax, uint8_t decimals, float gz, float yz)
   drawGauge(G1_X, G1_Y, G1_ARC, G1_RADIUS, 5, 15, 0, VOLTAGEMAX, 0, 0, 0);
   drawGauge(G2_X, G2_Y, G2_ARC, G2_RADIUS, 5, 15, 0, CURRENTMAX/1000, 0, CURRENTMAX-1000, CURRENTMAX-1000);
+  
+  // enable interrupt on button pressing
+  attachInterrupt(digitalPinToInterrupt(BUTTON), buttonPress, FALLING);
   }
 
 void loop(void)
   {
-  float voltage = 0;
-  float current = 0;
+  int voltage = 0;
+  int current = 0;
   uint8_t i = 0;
 
   for (i = 0; i < READINGS; i++)
     {
-    voltage += analogRead(A0);
+    uint16_t r=analogRead(A0);
+    if (r<27)  // module can't output less than 1.25V (27~=1V on ADC)
+      {
+      setAlarm();
+      break;
+      }
+    voltage += r;
     current += ACS.mA_DC();
     delay(5);
     }
 
-  voltage /= READINGS;
-  current /= READINGS;
+  float voltval = voltage/READINGS;
+  float curval = current/READINGS;
 
-  voltage *= .00488; // ADC to voltage (5/1023)
-  voltage /= .12795; // voltage from divider to voltage on divider input (R1=68K, R2=10K)
-  voltage /= 1.121;  // linear regression I made for correct some drift on my circuit
+  voltval *= .00488; // ADC to voltage (5/1023)
+  voltval /= .12795; // voltage from divider to voltage on divider input (R1=68K, R2=10K)
+  //voltage /= 1.121;  // linear regression I made for correct some drift on my circuit
 
-  //current *= .0488; // ADC to voltage (5/1023) *10
-  //current -= 25; // voltage to current *10 (ACS712 2.5V offset, 20A model has 100mV/A resolution)
-  if (current < 0) current *= -1; // turn to positive
-
-  drawPointer(voltageCtx, G1_X, G1_Y, G1_ARC, G1_RADIUS, voltage, 0, VOLTAGEMAX);
-  drawPointer(currentCtx, G2_X, G2_Y, G2_ARC, G2_RADIUS, current/1000, 0, CURRENTMAX);
+  //curval *= .0488; // ADC to voltage (5/1023) *10
+  //curval -= 25; // voltage to current *10 (ACS712 2.5V offset, 20A model has 100mV/A resolution)
+  if (curval < 0) curval *= -1; // turn to positive
+  if (curval > CURRENTMAX) setAlarm();
+  
+  drawPointer(voltageCtx, G1_X, G1_Y, G1_ARC, G1_RADIUS, voltval, 0, VOLTAGEMAX);
+  drawPointer(currentCtx, G2_X, G2_Y, G2_ARC, G2_RADIUS, curval/1000, 0, CURRENTMAX);
 
   // set font
   ucg.setColor(0, 255, 255, 255); // foreground color
@@ -151,29 +193,35 @@ void loop(void)
   ucg.setPrintDir(0);
 
   // write values
+  if (outputEnabled)
+    {
+    ucg.setColor(0, 0, 255, 0); // green : power output on
+    }
+  else
+    {
+    if (alarm)
+      {
+      ucg.setColor(0, 255, 0, 0); // red : alarm
+      }
+    else
+      {
+      ucg.setColor(0, 90, 90, 90); // grey : power output off
+      }
+    }
   ucg.setPrintPos(G1_X + G1_RADIUS + 27, G1_Y - 33); // 23
-  ucg.print(voltage, 1);
+  ucg.print(voltval, 1);
   ucg.print("  ");
   ucg.setPrintPos(G1_X + G1_RADIUS + 27, G1_Y - 10);
   ucg.print("V");
 
+  ucg.setColor(0, 255, 255, 255); // foreground color
   ucg.setPrintPos(G2_X + G2_RADIUS + 27, G2_Y - 33);
-  if (current > CURRENTMAX)
-    {
-    ucg.setColor(0, 255, 0, 0); // foreground color
-    ucg.print("HIGH ");
-    ucg.setPrintPos(G2_X + G2_RADIUS + 27, G2_Y - 10);
-    ucg.print("    ");
-    }
-  else
-    {
-    ucg.setColor(0, 255, 255, 255); // foreground color
-    ucg.print(current, 0);
-    ucg.print("  ");
-    ucg.setPrintPos(G2_X + G2_RADIUS + 27, G2_Y - 10);
-    ucg.print("mA");
-    }
+  ucg.print(curval, 0);
+  ucg.print("  ");
+  ucg.setPrintPos(G2_X + G2_RADIUS + 27, G2_Y - 10);
+  ucg.print("mA");
   }
+
 
 void drawGauge(uint8_t x, uint8_t y, uint8_t arc, uint8_t radius, uint8_t stp, uint8_t tickl, float gaugemin, float gaugemax, uint8_t decimals, float gz, float yz)
   {
