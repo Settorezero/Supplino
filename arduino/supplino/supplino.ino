@@ -3,13 +3,12 @@
  quick&dirty PSU
  by @cyb3rn0id and @mrloba81
  https://www.github.com/settorezero/supplino
-
- WORK IN PROGRESS, CODE NOT WORKING
 */
 
+#include <Arduino.h>
 #include <SPI.h>
 #include "Ucglib.h" // Ucglib by Oliver
-#include "ACS712.h" // ACS712 by Rob Tillaart, Pete Thompson
+#include "gauge.hpp"
 
 // ST7735 display to Arduino nano connections:
 // CLK    : 13 (or SCL)
@@ -28,111 +27,185 @@ Ucglib_ST7735_18x128x160_HWSPI ucg(9, 10, 8);
 #define VOLTAGE_SENSE A0 // voltage divider on A0 for reading voltage output from switching regulator
 #define CURRENT_SENSE A1 // analog output from ACS712 current sensor
 #define RELAY          4 // relay attached on D4
-#define BUTTON         3 // button attached on D3 (used interrupt)
+#define BUTTON         3 // button attached on D3 (interrupt used)
+// other macros
+#define RELAYON      LOW // relay module used is active low => turns on when low level is sent
+#define IREADINGS   200  // number of analog readings for current
+#define VREADINGS    20  // number of analog readings for voltage
+#define CURRENTMAX    5  // A
+#define VOLTAGEMAX   30  // V
+#define DIVIDERCONST 0.12795F // voltage from divider to voltage on divider input (R1=68K, R2=10K)
+#define ADCCONV      0.00488F // 5/1024, used for conversion from ADC to voltage
+#define ACSCONST     0.1F  // used 20A type that gives 100mV (0.1V) per 1 Ampere
+// Inverse formula for having ADC value from CURRENTMAX value
+// currentCalibration value has to be added to this
+// Current= [(ADCvalue-currentCalibration) * (5/1024)] / 0.1
+// ADCvalue = [(Current * 0.1) / (5/1024)] + currentCalibration
+#define ADCCURRENTALARM int(CURRENTMAX*ACSCONST/ADCCONV)
+// Inverse formula for having ADC value from VOLTAGEMAX value
+#define ADCVOLTAGEALARM int(VOLTAGEMAX*DIVIDERCONST/ADCCONV)
 
-bool alarm=false;
-bool outputEnabled=false;
-#define RELAY_ON   false // relay board active low
-#define READINGS   20   // number of analog readings
-#define CURRENTMAX 5000 // mA
-#define VOLTAGEMAX 40   // V
-
-// constants used for the first gauge
+// constants used for the first gauge (voltage)
 #define G1_X 56
 #define G1_Y 64
 #define G1_ARC 120
 #define G1_RADIUS 30
+Gauge voltGauge(&ucg);
 
-// constants used for the second gauge
+// constants used for the second gauge (current)
 #define G2_X 56
 #define G2_Y 127
 #define G2_ARC 120
 #define G2_RADIUS 30
+Gauge ampGauge(&ucg);
 
-#define c 0.0174532925F // pi/180 (for grad to rad conversion)
+enum alarmType {
+  no_alarm,
+  over_load,
+  over_voltage,
+  short_circuit,
+  };
 
-ACS712  ACS(CURRENT_SENSE, 5.0, 1023, 100); // current sensor on A1, voltage reference 5V, 1023 max from adc, 100mV/A sensor used
+struct readData {
+  float voltage=0;
+  float current=0;
+  int8_t currentDecimals=1;
+  float currentCalibration=512; // ADC zero offset for current sensor (2.5V)
+} data;
 
-struct DrawContext 
+alarmType alarm=no_alarm;
+volatile bool outputEnabled = false;
+
+// compute readings fuction
+// calibration=true => don't read voltage and store zero current value (calibration)
+// calibration=false =>  read voltage too and use current calibration value to adjust the current value
+void computeReadings(readData *data, bool calibration) 
   {
-  float old_val;
-  float ltx; // Saved x coord of bottom of pointer
-  uint16_t osx;
-  uint16_t osy;
-  bool first_start;
-  } voltageCtx, currentCtx;
+  float i_val = 0.0; // current value (Ampere)
+  float v_val = 0.0 ; // voltage value (Volt)
+  uint16_t anValue = 0; // ADC raw readings from ACS sensor and from voltage divider
+  uint8_t i=0; // generic counter
+  
+  if (calibration) outputDisable(); // disable output if in current calibration
+  
+  // read current value
+  for (i = 0; i < IREADINGS; i++) 
+    {
+    anValue = analogRead(CURRENT_SENSE);
+    // quickly detect an overload
+    if (anValue > data->currentCalibration + ADCCURRENTALARM) 
+      {
+      setAlarm(over_load);
+      return;  
+      }
+    i_val += anValue;
+    } // end current reading cycle
+  i_val /= IREADINGS; // average
 
-void buttonPress(void)
- {
- // ISR at button pressing
- noInterrupts();
- static long lastPress=0;
- if ((millis()-lastPress) < 200)
+  // calibration mode=>store this value as ZERO current
+  if (calibration) 
     {
-    // exit if <200mS press
-    lastPress=millis();
-    interrupts();
-    return;  
+    data->currentCalibration = i_val;
+    return; // exit from function
     }
- // in an alarm status, first press reset the alarm
- // second press will re-enable the power output
- if (alarm)
+  else // not calibration 
     {
-    alarm=false;
-    lastPress=millis();
-    interrupts();
-    return;
+    // normally you subtract an 2.5V offset, we prefer read the standby value and subtract this
+    // that would be around 2.5V
+    i_val = i_val - data->currentCalibration;
+    // turn negative value in positive since we're working only on DC
+    // and can happen we wired the current sensor in inverse way
+    if (i_val<0) i_val *=-1;
+    // compute current value in Ampere
+    i_val *= ADCCONV; // ADC to voltage in V
+    i_val /= ACSCONST; // Voltage to Ampere using the sensor constant
+    data->current = i_val;
+    // set 1 decimal if current >1A, 2 decimals if lower
+    data->currentDecimals=i_val>1?1:2;
     }
- outputEnabled?outputDisable():outputEnable();
- while(!digitalRead(BUTTON));
- lastPress=millis();
- interrupts();
- }
+
+  // read voltage too if not in calibration mode
+  if (!calibration) 
+    {
+    for (i = 0; i < VREADINGS; i++) 
+        {
+        anValue = analogRead(VOLTAGE_SENSE);
+        // quickly check a short-circuit
+        // module can't output less than 1.25V (27 from ADC ~= 1V)
+        if (anValue < 27) 
+          {
+          setAlarm(short_circuit);
+          return;
+          }
+        // quickly check an over-voltage. Dunno if useful or not, maybe a broken switching module can output voltage unregulated?
+        if (anValue > ADCVOLTAGEALARM)
+          {
+          setAlarm(over_voltage);
+          return;    
+          }
+        v_val += anValue;
+        } // end voltage reading cycle
+    v_val /= VREADINGS; // average
+    v_val *= ADCCONV;// ADC to voltage in V
+    v_val /= DIVIDERCONST; // voltage from divider output to voltage on divider input
+    data->voltage = v_val;
+  } // not current calibration => read voltage too
+} // \computeReadings
 
 void outputEnable(void)
- {
- // toggle relay allowing power output
- outputEnabled=true;
- digitalWrite(RELAY,RELAY_ON);
- }
+{
+  // toggle relay allowing power output
+  outputEnabled = true;
+  digitalWrite(RELAY, RELAYON);
+}
 
 void outputDisable(void)
- {
- // toggle relay disabling power output
- outputEnabled=false;
- digitalWrite(RELAY, !RELAY_ON);
- }
+{
+  // toggle relay disabling power output
+  outputEnabled = false;
+  digitalWrite(RELAY, !RELAYON);
+}
 
-void setAlarm(void)
+void buttonPress(void)
+{
+  // ISR at button pressing
+  noInterrupts();
+  static long lastPress = 0;
+  if ((millis() - lastPress) < 200)
   {
-  outputDisable();
-  alarm=true;  
+    // exit if <200mS press
+    lastPress = millis();
+    interrupts();
+    return;
   }
-  
-void setup(void)
+  // in an alarm status, first press reset the alarm
+  // second press will re-enable the power output
+  if (alarm!=no_alarm)
   {
+    alarm = no_alarm; // reset alarm status...
+    lastPress = millis();
+    interrupts();
+    return; // ... but remain with relay off
+  }
+  outputEnabled ? outputDisable() : outputEnable();
+  while (!digitalRead(BUTTON)); // eventually stay stuck until button released
+  lastPress = millis();
+  interrupts();
+}
+
+void setAlarm(alarmType alm)
+{
+  outputDisable();
+  alarm = alm; // alarm is global
+}
+
+void setup(void)
+{
   pinMode(RELAY, OUTPUT);
   outputDisable();
   pinMode(BUTTON, INPUT_PULLUP);
   Serial.begin(9600);
-  voltageCtx.old_val = -999;
-  voltageCtx.ltx = 0; // Saved x coord of bottom of pointer
-  voltageCtx.osx = 0;
-  voltageCtx.osy = 0;
-  voltageCtx.first_start = true;
-
-  currentCtx.old_val = -999;
-  currentCtx.ltx = 0; // Saved x coord of bottom of pointer
-  currentCtx.osx = 0;
-  currentCtx.osy = 0;
-  currentCtx.first_start = true;
-
   delay(1000);
-  
-  // measure zero current
-  ACS.autoMidPoint();
-  ACS.autoMidPoint();
-  ACS.autoMidPoint();
   
   ucg.begin(UCG_FONT_MODE_TRANSPARENT);
   ucg.clearScreen();
@@ -144,239 +217,76 @@ void setup(void)
 
   // draw the two gauges
   // void drawGauge(uint8_t x, uint8_t y, uint8_t arc, uint8_t radius, uint8_t stp, uint8_t tickl, float gaugemin, float gaugemax, uint8_t decimals, float gz, float yz)
-  drawGauge(G1_X, G1_Y, G1_ARC, G1_RADIUS, 5, 15, 0, VOLTAGEMAX, 0, 0, 0);
-  drawGauge(G2_X, G2_Y, G2_ARC, G2_RADIUS, 5, 15, 0, CURRENTMAX/1000, 0, CURRENTMAX-1000, CURRENTMAX-1000);
-  
-  // enable interrupt on button pressing
-  attachInterrupt(digitalPinToInterrupt(BUTTON), buttonPress, FALLING);
-  }
+  voltGauge.drawGauge(G1_X, G1_Y, G1_ARC, G1_RADIUS, 5, 15, 0, VOLTAGEMAX, 0, 0, 0);
+  ampGauge.drawGauge(G2_X, G2_Y, G2_ARC, G2_RADIUS, 5, 15, 0, CURRENTMAX, 0, CURRENTMAX - 1, CURRENTMAX - 1);
 
-void loop(void)
-  {
-  int voltage = 0;
-  int current = 0;
-  uint8_t i = 0;
-
-  for (i = 0; i < READINGS; i++)
-    {
-    uint16_t r=analogRead(A0);
-    if (r<27)  // module can't output less than 1.25V (27~=1V on ADC)
-      {
-      setAlarm();
-      break;
-      }
-    voltage += r;
-    current += ACS.mA_DC();
-    delay(5);
-    }
-
-  float voltval = voltage/READINGS;
-  float curval = current/READINGS;
-
-  voltval *= .00488; // ADC to voltage (5/1023)
-  voltval /= .12795; // voltage from divider to voltage on divider input (R1=68K, R2=10K)
-  //voltage /= 1.121;  // linear regression I made for correct some drift on my circuit
-
-  //curval *= .0488; // ADC to voltage (5/1023) *10
-  //curval -= 25; // voltage to current *10 (ACS712 2.5V offset, 20A model has 100mV/A resolution)
-  if (curval < 0) curval *= -1; // turn to positive
-  if (curval > CURRENTMAX) setAlarm();
-  
-  drawPointer(voltageCtx, G1_X, G1_Y, G1_ARC, G1_RADIUS, voltval, 0, VOLTAGEMAX);
-  drawPointer(currentCtx, G2_X, G2_Y, G2_ARC, G2_RADIUS, curval/1000, 0, CURRENTMAX);
-
+  // calibrate zero current value and store in currentCalibration variable
+  computeReadings(&data, true);
+      
   // set font
   ucg.setColor(0, 255, 255, 255); // foreground color
   ucg.setColor(1, 0, 0, 0); // background color
   ucg.setFontMode(UCG_FONT_MODE_SOLID); // solid: background will painted
-  ucg.setFont(ucg_font_logisoso18_hr); // font (https://github.com/olikraus/ucglib/wiki/fontsize)
+  ucg.setFont(ucg_font_logisoso16_hr); // font (https://github.com/olikraus/ucglib/wiki/fontsize)
   ucg.setPrintDir(0);
+   
+  // enable interrupt on button pressing
+  attachInterrupt(digitalPinToInterrupt(BUTTON), buttonPress, FALLING);
+}
 
-  // write values
-  if (outputEnabled)
+void loop(void)
+{
+  // update values only if not in alarm mode
+  if (alarm==no_alarm)
     {
-    ucg.setColor(0, 0, 255, 0); // green : power output on
+    computeReadings(&data, false);
     }
-  else
-    {
-    if (alarm)
-      {
-      ucg.setColor(0, 255, 0, 0); // red : alarm
-      }
-    else
-      {
+  writeVoltage();
+  writeCurrent();
+}
+
+void writeVoltage(void)
+  {
+  // pointer
+  voltGauge.drawPointer(G1_X, G1_Y, G1_ARC, G1_RADIUS, data.voltage, 0, VOLTAGEMAX);
+  // numeric value
+  if (outputEnabled){
+     ucg.setColor(0, 0, 255, 0); // green : power output on
+     }
+  else {
+    if ((alarm==over_voltage) || (alarm==short_circuit)) {
+       ucg.setColor(0, 255, 0, 0); // red : alarm on voltage
+       }
+    else {
       ucg.setColor(0, 90, 90, 90); // grey : power output off
       }
-    }
+     }
   ucg.setPrintPos(G1_X + G1_RADIUS + 27, G1_Y - 33); // 23
-  ucg.print(voltval, 1);
+  ucg.print(data.voltage, 1);
   ucg.print("  ");
   ucg.setPrintPos(G1_X + G1_RADIUS + 27, G1_Y - 10);
-  ucg.print("V");
+  ucg.print("V");  
+  }
 
-  ucg.setColor(0, 255, 255, 255); // foreground color
+void writeCurrent(void)
+  {
+  // pointer
+  ampGauge.drawPointer(G2_X, G2_Y, G2_ARC, G2_RADIUS, data.current, 0, CURRENTMAX);
+  // numeric value
+  if (outputEnabled){
+     ucg.setColor(0, 0, 255, 0); // green : power output on
+     }
+  else {
+    if (alarm==over_load) {
+       ucg.setColor(0, 255, 0, 0); // red : alarm on current
+       }
+    else {
+      ucg.setColor(0, 90, 90, 90); // grey : power output off
+      }
+     }
   ucg.setPrintPos(G2_X + G2_RADIUS + 27, G2_Y - 33);
-  ucg.print(curval, 0);
+  ucg.print(data.current, data.currentDecimals);
   ucg.print("  ");
   ucg.setPrintPos(G2_X + G2_RADIUS + 27, G2_Y - 10);
-  ucg.print("mA");
-  }
-
-
-void drawGauge(uint8_t x, uint8_t y, uint8_t arc, uint8_t radius, uint8_t stp, uint8_t tickl, float gaugemin, float gaugemax, uint8_t decimals, float gz, float yz)
-  {
-  int amin = -((int)arc / 2);
-  int amax = (arc / 2) + 1;
-  // Draw ticks every 'stp' degrees from -(arc/2) to (arc/2) degrees
-  for (int i = amin; i < amax; i += stp)
-    {
-    // Calculating coodinates of tick to draw
-    // at this time will be used only for drawing the green/yellow/red zones
-    float sx = cos((i - 90) * c);
-    float sy = sin((i - 90) * c);
-    uint16_t x0 = sx * (radius + tickl) + x;
-    uint16_t y0 = sy * (radius + tickl) + y;
-    uint16_t x1 = sx * radius + x;
-    uint16_t y1 = sy * radius + y;
-
-    // Coordinates of next tick for zone fill
-    float sx2 = cos((i + stp - 90) * c);
-    float sy2 = sin((i + stp - 90) * c);
-    int x2 = sx2 * (radius + tickl) + x;
-    int y2 = sy2 * (radius + tickl) + y;
-    int x3 = sx2 * radius + x;
-    int y3 = sy2 * radius + y;
-
-    // calculate angles for green and yellow zones
-    int ga=0;
-    int ya=0;
-    if (gz>gaugemin) ga=(int)lmap(gz, gaugemin, gaugemax, amin, amax); // green zone will be between gaugemin and GZ
-    if (yz>gaugemin) ya=(int)lmap(yz, gaugemin, gaugemax, amin, amax); // yellow zone will be between GZ and YZ
-    // red zone will be between YZ and gaugemax
-
-    // green zone
-    if ((gz>=gaugemin) && (gz<yz))
-      {
-      ucg.setColor(0, 0, 255, 0);
-      if (i >= amin && i < ga)
-        {
-        ucg.drawTriangle(x0, y0, x1, y1, x2, y2);
-        ucg.drawTriangle(x1, y1, x2, y2, x3, y3);
-        }
-      }
-    // yellow zone
-    if ((yz>gz) && (yz<=gaugemax))
-      {
-      ucg.setColor(0, 255, 255, 0);
-      if (i >= ga && i <ya)
-        {
-        ucg.drawTriangle(x0, y0, x1, y1, x2, y2);
-        ucg.drawTriangle(x1, y1, x2, y2, x3, y3);
-        }
-      }
-      
-    // red zone
-    if ((yz>gaugemin) && (yz>=gz) && (yz<=gaugemax))
-      {
-      ucg.setColor(0, 255, 0, 0);
-      if (i >= ya && i < amax-1)
-        {
-        ucg.drawTriangle(x0, y0, x1, y1, x2, y2);
-        ucg.drawTriangle(x1, y1, x2, y2, x3, y3);
-        }
-      }
-    // now we can draw ticks, above colored zones
-  
-    // Check if this is a "Short" scale tick
-    uint8_t tl = tickl;
-    if (i % (arc / 4) != 0) tl = (tickl / 2) + 1;
-
-    // Recalculate coords in case tick length is changed
-    x0 = sx * (radius + tl) + x;
-    y0 = sy * (radius + tl) + y;
-    x1 = sx * radius + x;
-    y1 = sy * radius + y;
-
-    // Draw tick
-    ucg.setColor(0, 255, 255, 255);
-    ucg.drawLine(x0, y0, x1, y1);
-
-    // Check if labels should be drawn
-    if (i % (arc / 4) == 0) // gauge will have 5 main ticks at 0, 25, 50, 75 and 100% of the scale
-      {
-      // Calculate label positions
-      x0 = sx * (radius + tl + 10) + x - 5; // 10, 5 are my offset for the font I've used for labels
-      y0 = sy * (radius + tl + 10) + y + 5;
-
-      // print label positions
-      ucg.setFontMode(UCG_FONT_MODE_TRANSPARENT);
-      ucg.setFont(ucg_font_orgv01_hf);
-      ucg.setColor(0, 255, 255, 255);
-      ucg.setPrintPos(x0, y0);
-      float cent = (gaugemax + gaugemin) / 2; // center point of the gauge
-      switch (i / (arc / 4))
-        {
-        case -2: ucg.print(gaugemin, decimals); break; // 0%=gaugemin
-        case -1: ucg.print((cent + gaugemin) / 2, decimals); break; // 25%
-        case  0: ucg.print(cent, decimals); break; // central point // 50%
-        case  1: ucg.print((cent + gaugemax) / 2, decimals); break; // 75%
-        case  2: ucg.print(gaugemax, decimals); break; // 100%=gaugemax
-        }
-      } // check if I must print labels
-
-    // Now draw the arc of the scale
-    sx = cos((i + stp - 90) * c);
-    sy = sin((i + stp - 90) * c);
-    x0 = sx * radius + x;
-    y0 = sy * radius + y;
-    ucg.setColor(0, 255, 255, 255);
-    if (i < (arc / 2)) ucg.drawLine(x0, y0, x1, y1); // don't draw the last part
-    }
-  }
-
-void drawPointer(DrawContext &ctx, uint8_t x, uint8_t y, uint8_t arc, uint8_t radius, float value, float minval, float maxval)
-  {
-  uint8_t nl = 10; // pointer "length" (0=longest)
-  // quick exit if value to paint is about the same for avoiding pointer flickering
-  if ((value <= ctx.old_val + .05) && (value >= ctx.old_val - .05)) return;
-  ctx.old_val = value;
-
-  if (value < minval) value = minval;
-  if (value > maxval) value = maxval;
-
-  float sdeg = lmap(value, minval, maxval, (-(arc / 2) - 90), ((arc / 2) - 90)); // Map value to angle
-  // Calculate tip of pointer coords
-  float sx = cos(sdeg * c);
-  float sy = sin(sdeg * c);
-
-  // Calculate x delta of needle start (does not start at pivot point)
-  float tx = tan((sdeg + 90) * c);
-
-  // Erase old needle image if not first time pointer is drawn
-  if (!ctx.first_start)
-    {
-    ucg.setColor(0, 0, 0, 0);
-    ucg.drawLine(x + nl * ctx.ltx - 1, y - nl, ctx.osx - 1, ctx.osy);
-    ucg.drawLine(x + nl * ctx.ltx, y - nl, ctx.osx, ctx.osy);
-    ucg.drawLine(x + nl * ctx.ltx + 1, y - nl, ctx.osx + 1, ctx.osy);
-    }
-  ctx.first_start = false;
-
-  // Store new pointer end coords for next erase
-  ctx.ltx = tx;
-  ctx.osx = sx * (radius - 2) + x;
-  ctx.osy = sy * (radius - 2) + y;
-
-  // Draw the pointer in the new position
-  // draws 3 lines to thicken needle
-  ucg.setColor(0, 255, 255, 255);
-  ucg.drawLine(x + nl * ctx.ltx - 1, y - nl, ctx.osx - 1, ctx.osy);
-  ucg.drawLine(x + nl * ctx.ltx, y - nl, ctx.osx, ctx.osy);
-  ucg.drawLine(x + nl * ctx.ltx + 1, y - nl, ctx.osx + 1, ctx.osy);
-  }
-
-// Arduino "MAP" function but rewrited for using float numbers
-float lmap(float x, float in_min, float in_max, float out_min, float out_max)
-  {
-  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+  ucg.print("A"); 
   }
