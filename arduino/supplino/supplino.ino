@@ -4,6 +4,7 @@
  by @cyb3rn0id and @mrloba81
  https://www.github.com/settorezero/supplino
 */
+#define SUPPLINO_VERSION "1.0"
 
 #include <Arduino.h>
 #include <SPI.h>
@@ -28,7 +29,8 @@ Ucglib_ST7735_18x128x160_HWSPI ucg(9, 10, 8);
 #define CURRENT_SENSE A1 // analog output from ACS712 current sensor
 #define RELAY          4 // relay attached on D4
 #define BUTTON         3 // button attached on D3 (interrupt used)
-// other macros
+
+// constants
 #define RELAYON      LOW // relay module used is active low => turns on when low level is sent
 #define IREADINGS   200  // number of analog readings for current
 #define VREADINGS    20  // number of analog readings for voltage
@@ -37,6 +39,8 @@ Ucglib_ST7735_18x128x160_HWSPI ucg(9, 10, 8);
 #define DIVIDERCONST 0.12795F // voltage from divider to voltage on divider input (R1=68K, R2=10K)
 #define ADCCONV      0.00488F // 5/1024, used for conversion from ADC to voltage
 #define ACSCONST     0.1F  // used 20A type that gives 100mV (0.1V) per 1 Ampere
+
+// alarms
 // Inverse formula for having ADC value from CURRENTMAX value
 // currentCalibration value has to be added to this
 // Current= [(ADCvalue-currentCalibration) * (5/1024)] / 0.1
@@ -45,6 +49,12 @@ Ucglib_ST7735_18x128x160_HWSPI ucg(9, 10, 8);
 // Inverse formula for having ADC value from VOLTAGEMAX value
 #define ADCVOLTAGEALARM int(VOLTAGEMAX*DIVIDERCONST/ADCCONV)
 
+// user adjustments for voltage and current reading
+#define VOLT_ADJ(V) V-0.2
+// #define VOLT_ADJ(V)  V // for no correction
+#define CURR_ADJ(I) I-0.05
+// #define CURR_ADJ(I) I // for no correction
+  
 // constants used for the first gauge (voltage)
 #define G1_X 56
 #define G1_Y 64
@@ -119,6 +129,8 @@ void computeReadings(readData *data, bool calibration)
     // compute current value in Ampere
     i_val *= ADCCONV; // ADC to voltage in V
     i_val /= ACSCONST; // Voltage to Ampere using the sensor constant
+    i_val=CURR_ADJ(i_val);
+    if (i_val<0) i_val=0;
     data->current = i_val;
     // set 1 decimal if current >1A, 2 decimals if lower
     data->currentDecimals=i_val>1?1:2;
@@ -148,7 +160,7 @@ void computeReadings(readData *data, bool calibration)
     v_val /= VREADINGS; // average
     v_val *= ADCCONV;// ADC to voltage in V
     v_val /= DIVIDERCONST; // voltage from divider output to voltage on divider input
-    data->voltage = v_val;
+    data->voltage = VOLT_ADJ(v_val);
   } // not current calibration => read voltage too
 } // \computeReadings
 
@@ -215,21 +227,41 @@ void setup(void)
   ucg.setColor(0, 0, 0, 0);
   ucg.drawBox(0, 0, ucg.getWidth(), ucg.getHeight());
 
-  // draw the two gauges
-  // void drawGauge(uint8_t x, uint8_t y, uint8_t arc, uint8_t radius, uint8_t stp, uint8_t tickl, float gaugemin, float gaugemax, uint8_t decimals, float gz, float yz)
-  voltGauge.drawGauge(G1_X, G1_Y, G1_ARC, G1_RADIUS, 5, 15, 0, VOLTAGEMAX, 0, 0, 0);
-  ampGauge.drawGauge(G2_X, G2_Y, G2_ARC, G2_RADIUS, 5, 15, 0, CURRENTMAX, 0, CURRENTMAX - 1, CURRENTMAX - 1);
-
-  // calibrate zero current value and store in currentCalibration variable
-  computeReadings(&data, true);
-      
   // set font
   ucg.setColor(0, 255, 255, 255); // foreground color
   ucg.setColor(1, 0, 0, 0); // background color
   ucg.setFontMode(UCG_FONT_MODE_SOLID); // solid: background will painted
   ucg.setFont(ucg_font_logisoso16_hr); // font (https://github.com/olikraus/ucglib/wiki/fontsize)
   ucg.setPrintDir(0);
-   
+  ucg.setPrintPos(10, 25);
+  ucg.print("SUPPLINO ");
+  ucg.print(SUPPLINO_VERSION);
+  ucg.setPrintPos(10, 47);
+  ucg.print("CyB3rn0id");
+  ucg.setPrintPos(10, 69);
+  ucg.print("MrLoba81");
+  
+  // calibrate zero current value and store in currentCalibration variable
+  computeReadings(&data, true);
+
+  delay(1500);
+  
+  // paint screen in black
+  ucg.setColor(0, 0, 0, 0);
+  ucg.drawBox(0, 0, ucg.getWidth(), ucg.getHeight());
+      
+  // draw the two gauges
+  // void drawGauge(uint8_t x, uint8_t y, uint8_t arc, uint8_t radius, uint8_t stp, uint8_t tickl, float gaugemin, float gaugemax, uint8_t decimals, float gz, float yz)
+  voltGauge.drawGauge(G1_X, G1_Y, G1_ARC, G1_RADIUS, 5, 15, 0, VOLTAGEMAX, 0, 0, 0);
+  ampGauge.drawGauge(G2_X, G2_Y, G2_ARC, G2_RADIUS, 5, 15, 0, CURRENTMAX, 0, CURRENTMAX - 1, CURRENTMAX - 1);
+  
+  // re-set font since gauge uses another kind of font
+  ucg.setColor(0, 255, 255, 255); // foreground color
+  ucg.setColor(1, 0, 0, 0); // background color
+  ucg.setFontMode(UCG_FONT_MODE_SOLID); // solid: background will painted
+  ucg.setFont(ucg_font_logisoso16_hr); // font (https://github.com/olikraus/ucglib/wiki/fontsize)
+  ucg.setPrintDir(0);
+  
   // enable interrupt on button pressing
   attachInterrupt(digitalPinToInterrupt(BUTTON), buttonPress, FALLING);
 }
