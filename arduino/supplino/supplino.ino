@@ -173,12 +173,14 @@ void setup(void)
   ucg.setFontMode(UCG_FONT_MODE_SOLID); // solid: background will painted
   ucg.setFont(ucg_font_logisoso16_hr); // font (https://github.com/olikraus/ucglib/wiki/fontsize)
   ucg.setPrintDir(0);
-  ucg.setPrintPos(10, 25);
+  ucg.drawHLine(10, 35, 140);
+  ucg.setPrintPos(23, 25);
   ucg.print("SUPPLINO ");
   ucg.print(SUPPLINO_VERSION);
-  ucg.setPrintPos(10, 47);
+  ucg.setFont(ucg_font_ncenR14_hr);
+  ucg.setPrintPos(34, 65);
   ucg.print("CyB3rn0id");
-  ucg.setPrintPos(10, 69);
+  ucg.setPrintPos(35, 95);
   ucg.print("MrLoba81");
 
   // calibrate zero current value and store in currentCalibration struct variable
