@@ -31,12 +31,13 @@ Ucglib_ST7735_18x128x160_HWSPI ucg(9, 10, 8);
 #define BUTTON         3 // button attached on D3 (interrupt used)
 
 // constants
+// note: XL4016E1 IC accept from 4 to 40V at input, and outputs from 1.25 to 36V
 #define RELAYON     LOW // relay module used is active low => turns on when low level is sent
 #define IREADINGS   200 // number of analog readings for current
 #define VREADINGS    20 // number of analog readings for voltage
 #define CURRENTMAX    5 // A
-#define VOLTAGEMAX   30 // V
-#define VOLTAGEMIN    1 // V - used for undervoltage alarm, see "ADC_UNDERVOLTAGEALARM" under
+#define VOLTAGEMAX   33 // V
+#define VOLTAGEMIN    1 // V - used for undervoltage alarm, see "ADC_UNDERVOLTAGEALARM" below
 #define POWERMAX      CURRENTMAX*VOLTAGEMAX // W
 #define DIVIDERCONST  0.12821F // conversion from voltage out from divider to voltage on divider input R1=68K, R2=10K => R1/(R1+R2)
 #define ADCCONV       0.00488F // 5/1024, used for conversion from ADC to voltage
@@ -56,13 +57,13 @@ Ucglib_ST7735_18x128x160_HWSPI ucg(9, 10, 8);
 #define ADC_UNDERVOLTAGEALARM int(VOLTAGEMIN*DIVIDERCONST/ADCCONV)
 
 // colors used for Voltage, Current and Power (background=1/foreground=0, R, G, B)
-#define SET_V_COLOR ucg.setColor(0, 0, 250, 0);
-#define SET_I_COLOR ucg.setColor(0, 0, 150, 255);
-#define SET_W_COLOR ucg.setColor(0, 204, 204, 0);
+#define SET_V_COLOR ucg.setColor(0, 0, 250, 0)
+#define SET_I_COLOR ucg.setColor(0, 0, 150, 255)
+#define SET_W_COLOR ucg.setColor(0, 204, 204, 0)
 
 // voltage adjustment
-#define VOLT_ADJ(V)  V // for no correction
-//#define VOLT_ADJ(V) V-0.2 // your own formula
+//#define VOLT_ADJ(V)  V // for no correction
+#define VOLT_ADJ(V) V+0.1 // your own formula
 
 // current adjustment
 // #define CURR_ADJ(I) I // for no correction
@@ -215,9 +216,8 @@ void loop(void)
   ucg.setFont(ucg_font_logisoso16_hr); // font (https://github.com/olikraus/ucglib/wiki/fontsize)
   ucg.setPrintDir(0);
 
-  // update values only if not in alarm mode
-  if (alarm == no_alarm) computeReadings(&data, false);
-
+  // update values 
+  computeReadings(&data, false);
   printValues();
   updateGauge();
   outputIcon();
@@ -307,11 +307,9 @@ void drawGaugeScale(void)
     case I:
       gauge.drawGauge(G_X, G_Y, G_ARC, G_RADIUS, 5, 15, 0, CURRENTMAX, 0, CURRENTMAX - 1, CURRENTMAX - 1);
       break;
-    
     case W:
       gauge.drawGauge(G_X, G_Y, G_ARC, G_RADIUS, 5, 15, 0, POWERMAX, 0, POWERMAX - 1, POWERMAX - 1);
       break;
-      
     default:
       gauge.drawGauge(G_X, G_Y, G_ARC, G_RADIUS, 5, 15, 0, VOLTAGEMAX, 0, 0, 0);
       break;
@@ -321,33 +319,32 @@ void drawGaugeScale(void)
 // update analog gauge pointer
 void updateGauge(void)
 {
-  ucg.setColor(0, 90, 90, 90); // default color is gray
   switch (showedGauge)
     {
     case I:
       gauge.drawPointer(G_X, G_Y, G_ARC, G_RADIUS, data.current, 0, CURRENTMAX);
-      ucg.setFontMode(UCG_FONT_MODE_TRANSPARENT);
+      ucg.setFontMode(UCG_FONT_MODE_SOLID);
       ucg.setFont(ucg_font_orgv01_hf);
       ucg.setPrintPos(G_X - 16, G_Y);
-      if (outputEnabled) SET_I_COLOR
+      outputEnabled?(SET_I_COLOR):ucg.setColor(0, 90, 90, 90);
       ucg.print("AMPERE");
       break;
     
     case W:
       gauge.drawPointer(G_X, G_Y, G_ARC, G_RADIUS, data.power, 0, POWERMAX);
-      ucg.setFontMode(UCG_FONT_MODE_TRANSPARENT);
+      ucg.setFontMode(UCG_FONT_MODE_SOLID);
       ucg.setFont(ucg_font_orgv01_hf);
       ucg.setPrintPos(G_X - 14, G_Y);
-      if (outputEnabled) SET_W_COLOR
+      outputEnabled?(SET_W_COLOR):ucg.setColor(0, 90, 90, 90);
       ucg.print("WATTS");
       break;
       
     default:
       gauge.drawPointer(G_X, G_Y, G_ARC, G_RADIUS, data.voltage, 0, VOLTAGEMAX);
-      ucg.setFontMode(UCG_FONT_MODE_TRANSPARENT);
+      ucg.setFontMode(UCG_FONT_MODE_SOLID);
       ucg.setFont(ucg_font_orgv01_hf);
       ucg.setPrintPos(G_X - 14, G_Y);
-      if (outputEnabled) SET_V_COLOR
+      outputEnabled?(SET_V_COLOR):ucg.setColor(0, 90, 90, 90);
       ucg.print("VOLTS");
       break;
     }
@@ -356,23 +353,29 @@ void updateGauge(void)
 // print digital values
 void printValues()
 {
+  static float preV=0;
+  // draw a black box passing from a value >10 to a value<10
+  ucg.setColor(0, 0, 0, 0);
+  ucg.setColor(1, 0, 0, 0);
+  if (preV>=10.0 && data.voltage<10.0) ucg.drawBox(1, 12, 51, 18);
+  
   ucg.setColor(0, 90, 90, 90); // default color is gray
-  if (outputEnabled) SET_V_COLOR
-  ucg.setPrintPos(9, 29);
-  ucg.print(data.voltage, data.voltage >= 10 ? 1 : 2);
-  if (data.voltage >= 10) ucg.print(" ");
+  if (outputEnabled) SET_V_COLOR;
+  data.voltage<10?ucg.setPrintPos(14,29):ucg.setPrintPos(8, 29);
+  ucg.print(data.voltage, 1);
   ucg.setPrintPos(22, 50);
   ucg.print("V");
+  preV=data.voltage;
 
-  if (outputEnabled) SET_I_COLOR
+  if (outputEnabled) SET_I_COLOR;
   ucg.setPrintPos(63, 29);
   ucg.print(data.current, data.current >= 10 ? 1 : 2);
   if (data.current >= 10) ucg.print(" ");
   ucg.setPrintPos(75, 50);
   ucg.print("A");
 
-  if (outputEnabled) SET_W_COLOR
-  ucg.setPrintPos(117, 29);
+  if (outputEnabled) SET_W_COLOR;
+  ucg.setPrintPos(116, 29);
   ucg.print(data.power, data.power >= 10 ? 1 : 2);
   if (data.power >= 10) ucg.print(" ");
   ucg.setPrintPos(128, 50);
