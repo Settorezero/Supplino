@@ -62,12 +62,12 @@ Ucglib_ST7735_18x128x160_HWSPI ucg(9, 10, 8);
 #define SET_W_COLOR ucg.setColor(0, 204, 204, 0)
 
 // voltage adjustment
-//#define VOLT_ADJ(V)  V // for no correction
-#define VOLT_ADJ(V) V+0.1 // your own formula
+#define VOLT_ADJ(V)  V // for no correction
+//#define VOLT_ADJ(V) V+0.1 // your own formula
 
 // current adjustment
 // #define CURR_ADJ(I) I // for no correction
-#define CURR_ADJ(I) I-0.06 // your own formula
+#define CURR_ADJ(I) I-0.09 // your own formula
 
 Gauge gauge(&ucg); // analog gauge instance
 // constants used for the analog gauge
@@ -361,23 +361,23 @@ void printValues()
   
   ucg.setColor(0, 90, 90, 90); // default color is gray
   if (outputEnabled) SET_V_COLOR;
-  data.voltage<10?ucg.setPrintPos(14,29):ucg.setPrintPos(8, 29);
+  data.voltage<10.0?ucg.setPrintPos(14,29):ucg.setPrintPos(8, 29);
   ucg.print(data.voltage, 1);
   ucg.setPrintPos(22, 50);
   ucg.print("V");
   preV=data.voltage;
 
   if (outputEnabled) SET_I_COLOR;
-  ucg.setPrintPos(63, 29);
-  ucg.print(data.current, data.current >= 10 ? 1 : 2);
-  if (data.current >= 10) ucg.print(" ");
+  data.current<10.0?ucg.setPrintPos(63, 29):ucg.setPrintPos(60, 29);
+  ucg.print(data.current, data.current >= 10.0 ? 1 : 2);
+  if (data.current >= 10.0) ucg.print(" ");
   ucg.setPrintPos(75, 50);
   ucg.print("A");
 
   if (outputEnabled) SET_W_COLOR;
-  ucg.setPrintPos(116, 29);
-  ucg.print(data.power, data.power >= 10 ? 1 : 2);
-  if (data.power >= 10) ucg.print(" ");
+  data.power<10.0?ucg.setPrintPos(116, 29):ucg.setPrintPos(113, 29);
+  ucg.print(data.power, data.power >= 10.0 ? 1 : 2);
+  if (data.power >= 10.0) ucg.print(" ");
   ucg.setPrintPos(128, 50);
   ucg.print("W");
 }
