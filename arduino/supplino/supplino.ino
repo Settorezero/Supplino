@@ -1,9 +1,24 @@
 /*
-  SUPPLINO
-  quick&dirty PSU
-  by @cyb3rn0id and @mrloba81
-  https://www.github.com/settorezero/supplino
-*/
+ * SUPPLINO
+ * "quick&dirty PSU"
+ * by @cyb3rn0id and @mrloba81
+ * https://www.github.com/settorezero/supplino
+ *
+ * Copyright (c) 2022 Giovanni Bernardo, Paolo Loberto.
+ * 
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 #define SUPPLINO_VERSION "1.0"
 
 #include <Arduino.h>
@@ -356,32 +371,45 @@ void updateGauge(void)
 void printValues()
 {
   static float preV=0;
-  // draw a black box passing from a value >10 to a value<10
-  ucg.setColor(0, 0, 0, 0);
-  ucg.setColor(1, 0, 0, 0);
-  if (preV>=10.0 && data.voltage<10.0) ucg.drawBox(1, 12, 51, 18);
+  static float preI=0;
+  static float preW=0;
   
-  ucg.setColor(0, 90, 90, 90); // default color is gray
-  if (outputEnabled) SET_V_COLOR;
+  // draw a black box passing from a value >10 to a value<10
+  ucg.setColor(1, 0, 0, 0);
+  ucg.setColor(0, 0, 0, 0);
+  if (preV>=10.0 && data.voltage<10.0) ucg.drawBox(1, 12, 51, 18);
+  outputEnabled?SET_V_COLOR:ucg.setColor(0, 90, 90, 90); // default color is gray
   data.voltage<10.0?ucg.setPrintPos(14,29):ucg.setPrintPos(8, 29);
   ucg.print(data.voltage, 1);
   ucg.setPrintPos(22, 50);
   ucg.print("V");
-  preV=data.voltage;
-
-  if (outputEnabled) SET_I_COLOR;
+  
+  // draw a black box passing from a value >10 to a value<10
+  ucg.setColor(1, 0, 0, 0);
+  ucg.setColor(0, 0, 0, 0);
+  if (preI>=10.0 && data.current<10.0) ucg.drawBox(54, 12, 52, 18);
+  outputEnabled?SET_I_COLOR:ucg.setColor(0, 90, 90, 90); // default color is gray
   data.current<10.0?ucg.setPrintPos(63, 29):ucg.setPrintPos(60, 29);
   ucg.print(data.current, data.current >= 10.0 ? 1 : 2);
   if (data.current >= 10.0) ucg.print(" ");
   ucg.setPrintPos(75, 50);
   ucg.print("A");
 
-  if (outputEnabled) SET_W_COLOR;
-  data.power<10.0?ucg.setPrintPos(116, 29):ucg.setPrintPos(113, 29);
-  ucg.print(data.power, data.power >= 10.0 ? 1 : 2);
-  if (data.power >= 10.0) ucg.print(" ");
+  // draw a black box passing from a value >10/>20 to a value<10/<20
+  // not tested with values over 99.9
+  ucg.setColor(1, 0, 0, 0);
+  ucg.setColor(0, 0, 0, 0);
+  if ((preW>=10.0 && data.power<10.0) || (preW>=20.0 && data.power<20.0) || (preW<10.0 && data.power>=10.0))
+    {ucg.drawBox(108, 12, 51, 18);}
+  outputEnabled?SET_W_COLOR:ucg.setColor(0, 90, 90, 90); // default color is gray
+  data.power<10.0?ucg.setPrintPos(116, 29):(data.power>=20.0?ucg.setPrintPos(115, 29):ucg.setPrintPos(113, 29));
+  ucg.print(data.power, data.power<= 10.0?2:(data.power<100.0?1:0));
   ucg.setPrintPos(128, 50);
   ucg.print("W");
+
+  preV=data.voltage;
+  preI=data.current;
+  preW=data.power;
 }
 
 // draw round icon indicating power output status
