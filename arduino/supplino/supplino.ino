@@ -1,24 +1,24 @@
 /*
- * SUPPLINO
- * "quick&dirty PSU"
- * by @cyb3rn0id and @mrloba81
- * https://www.github.com/settorezero/supplino
- *
- * Copyright (c) 2022 Giovanni Bernardo, Paolo Loberto.
- * 
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
- */
+   SUPPLINO
+   "quick&dirty PSU"
+   by @cyb3rn0id and @mrloba81
+   https://www.github.com/settorezero/supplino
+
+   Copyright (c) 2022 Giovanni Bernardo, Paolo Loberto.
+
+   This program is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program. If not, see <http://www.gnu.org/licenses/>.
+*/
 #define SUPPLINO_VERSION "1.0"
 
 #include <Arduino.h>
@@ -95,14 +95,14 @@ enum alarmType {
   no_alarm,
   over_load,
   over_voltage,
-  short_circuit,
+  under_voltage,
 };
 
 enum gaugeType {
-   V, 
-   I, 
-   W
-   };
+  V,
+  I,
+  W
+};
 
 struct readData {
   float voltage = 0;
@@ -112,9 +112,9 @@ struct readData {
 } data;
 
 alarmType alarm = no_alarm;
-gaugeType showedGauge=V;
+gaugeType showedGauge = V;
 volatile bool outputEnabled = false; // output relay detached
-
+volatile bool skipInterrupt = false;
 //------------------------------------------------------------------------------------------------------------
 
 // toggle relay allowing power output
@@ -135,6 +135,14 @@ void outputDisable(void)
 void ISR_buttonPress(void)
 {
   noInterrupts(); // disable interrupts
+  
+  if (skipInterrupt)
+  {
+    skipInterrupt = false;
+    interrupts();
+    return;
+  }
+  
   static long lastPress = 0;
   if ((millis() - lastPress) < 200)
   {
@@ -153,7 +161,7 @@ void ISR_buttonPress(void)
     return; // ... but remain with relay off
   }
   outputEnabled ? outputDisable() : outputEnable(); // toggle
-  while (!digitalRead(BUTTON)); // eventually stay stuck until button released
+  //while (!digitalRead(BUTTON)); // eventually stay stuck until button released
   lastPress = millis();
   interrupts(); // re-enable interrupts
 }
@@ -210,7 +218,7 @@ void setup(void)
   // draw gauge scale
   drawGaugeScale();
 
-  // draw decorations    
+  // draw decorations
   ucg.setColor(0, 255, 255, 255); // foreground color
   ucg.setColor(1, 0, 0, 0); // background color
   // frame & separation lines
@@ -220,20 +228,33 @@ void setup(void)
   ucg.drawVLine(107, 0, 60);
   // led border
   ucg.drawDisc(135, 94, 17, UCG_DRAW_ALL);
-  
+
   // enable interrupt on button pressing
-  attachInterrupt(digitalPinToInterrupt(BUTTON), ISR_buttonPress, FALLING);
+  attachInterrupt(digitalPinToInterrupt(BUTTON), ISR_buttonPress, RISING);
 }
 
 
 void loop(void)
 {
+  static unsigned long lastCheck = millis();
+  if (digitalRead(BUTTON) == LOW)
+  {
+    if (millis() - lastCheck >= 1000) {
+      skipInterrupt = true;
+      showedGauge = showedGauge == V ? I : (showedGauge == I ? W : V);
+      drawGaugeScale();
+      updateGauge();
+      lastCheck = millis();
+    }
+  } else {
+    lastCheck = millis();
+  }
   // re-set font since gauge uses another kind of font
   ucg.setFontMode(UCG_FONT_MODE_SOLID); // solid: background will painted
   ucg.setFont(ucg_font_logisoso16_hr); // font (https://github.com/olikraus/ucglib/wiki/fontsize)
   ucg.setPrintDir(0);
 
-  // update values 
+  // update values
   computeReadings(&data, false);
   printValues();
   updateGauge();
@@ -274,7 +295,7 @@ void computeReadings(readData *data, bool calibration)
   }
   else // is not calibration
   {
-    // normally you'll subtract an 2.5V offset, but better read the standby value (previous functions) 
+    // normally you'll subtract an 2.5V offset, but better read the standby value (previous functions)
     // and then subtract that value (anyway in good conditions would be around 2.5V => around 512)
     i_val = i_val - data->currentCalibration;
     // turn (eventually) negative value in positive since we're working only on DC
@@ -297,7 +318,7 @@ void computeReadings(readData *data, bool calibration)
       // quickly check a short-circuit
       if (anValue < ADC_UNDERVOLTAGEALARM)
       {
-        setAlarm(short_circuit);
+        setAlarm(under_voltage);
         return;
       }
       // quickly check an over-voltage. Dunno if useful or not, maybe a broken switching module can output voltage unregulated?
@@ -318,78 +339,84 @@ void computeReadings(readData *data, bool calibration)
 
 // draw Analog gauge scale
 void drawGaugeScale(void)
-  {
+{
+  ucg.setColor(1, 0, 0, 0);
+  ucg.setColor(0, 0, 0, 0);
+  ucg.drawBox(1, 61, 115, 62);
   switch (showedGauge)
-    {
+  {
     case I:
       gauge.drawGauge(G_X, G_Y, G_ARC, G_RADIUS, 5, 15, 0, CURRENTMAX, 0, CURRENTMAX - 1, CURRENTMAX - 1);
+      gauge.drawPointer(G_X, G_Y, G_ARC, G_RADIUS, -1, 0, CURRENTMAX);
       break;
     case W:
       gauge.drawGauge(G_X, G_Y, G_ARC, G_RADIUS, 5, 15, 0, POWERMAX, 0, POWERMAX - 1, POWERMAX - 1);
+      gauge.drawPointer(G_X, G_Y, G_ARC, G_RADIUS, -1, 0, POWERMAX);
       break;
     default:
       gauge.drawGauge(G_X, G_Y, G_ARC, G_RADIUS, 5, 15, 0, VOLTAGEMAX, 0, 0, 0);
+      gauge.drawPointer(G_X, G_Y, G_ARC, G_RADIUS, -1, 0, VOLTAGEMAX);
       break;
-    }
   }
+}
 
 // update analog gauge pointer
 void updateGauge(void)
 {
   switch (showedGauge)
-    {
+  {
     case I:
       gauge.drawPointer(G_X, G_Y, G_ARC, G_RADIUS, data.current, 0, CURRENTMAX);
       ucg.setFontMode(UCG_FONT_MODE_SOLID);
       ucg.setFont(ucg_font_orgv01_hf);
       ucg.setPrintPos(G_X - 16, G_Y);
-      outputEnabled?(SET_I_COLOR):ucg.setColor(0, 90, 90, 90);
+      outputEnabled ? (SET_I_COLOR) : ucg.setColor(0, 90, 90, 90);
       ucg.print("AMPERE");
       break;
-    
+
     case W:
       gauge.drawPointer(G_X, G_Y, G_ARC, G_RADIUS, data.power, 0, POWERMAX);
       ucg.setFontMode(UCG_FONT_MODE_SOLID);
       ucg.setFont(ucg_font_orgv01_hf);
-      ucg.setPrintPos(G_X - 14, G_Y);
-      outputEnabled?(SET_W_COLOR):ucg.setColor(0, 90, 90, 90);
+      ucg.setPrintPos(G_X - 13, G_Y);
+      outputEnabled ? (SET_W_COLOR) : ucg.setColor(0, 90, 90, 90);
       ucg.print("WATTS");
       break;
-      
+
     default:
       gauge.drawPointer(G_X, G_Y, G_ARC, G_RADIUS, data.voltage, 0, VOLTAGEMAX);
       ucg.setFontMode(UCG_FONT_MODE_SOLID);
       ucg.setFont(ucg_font_orgv01_hf);
-      ucg.setPrintPos(G_X - 14, G_Y);
-      outputEnabled?(SET_V_COLOR):ucg.setColor(0, 90, 90, 90);
+      ucg.setPrintPos(G_X - 13, G_Y);
+      outputEnabled ? (SET_V_COLOR) : ucg.setColor(0, 90, 90, 90);
       ucg.print("VOLTS");
       break;
-    }
+  }
 }
 
 // print digital values
 void printValues()
 {
-  static float preV=0;
-  static float preI=0;
-  static float preW=0;
-  
+  static float preV = 0;
+  static float preI = 0;
+  static float preW = 0;
+
   // draw a black box passing from a value >10 to a value<10
   ucg.setColor(1, 0, 0, 0);
   ucg.setColor(0, 0, 0, 0);
-  if (preV>=10.0 && data.voltage<10.0) ucg.drawBox(1, 12, 51, 18);
-  outputEnabled?SET_V_COLOR:ucg.setColor(0, 90, 90, 90); // default color is gray
-  data.voltage<10.0?ucg.setPrintPos(14,29):ucg.setPrintPos(8, 29);
+  if (preV >= 10.0 && data.voltage < 10.0) ucg.drawBox(1, 12, 51, 18);
+  outputEnabled ? SET_V_COLOR : ucg.setColor(0, 90, 90, 90); // default color is gray
+  data.voltage < 10.0 ? ucg.setPrintPos(14, 29) : ucg.setPrintPos(8, 29);
   ucg.print(data.voltage, 1);
   ucg.setPrintPos(22, 50);
   ucg.print("V");
-  
+
   // draw a black box passing from a value >10 to a value<10
   ucg.setColor(1, 0, 0, 0);
   ucg.setColor(0, 0, 0, 0);
-  if (preI>=10.0 && data.current<10.0) ucg.drawBox(54, 12, 52, 18);
-  outputEnabled?SET_I_COLOR:ucg.setColor(0, 90, 90, 90); // default color is gray
-  data.current<10.0?ucg.setPrintPos(63, 29):ucg.setPrintPos(60, 29);
+  if (preI >= 10.0 && data.current < 10.0) ucg.drawBox(54, 12, 52, 18);
+  outputEnabled ? SET_I_COLOR : ucg.setColor(0, 90, 90, 90); // default color is gray
+  data.current < 10.0 ? ucg.setPrintPos(63, 29) : ucg.setPrintPos(60, 29);
   ucg.print(data.current, data.current >= 10.0 ? 1 : 2);
   if (data.current >= 10.0) ucg.print(" ");
   ucg.setPrintPos(75, 50);
@@ -399,17 +426,19 @@ void printValues()
   // not tested with values over 99.9
   ucg.setColor(1, 0, 0, 0);
   ucg.setColor(0, 0, 0, 0);
-  if ((preW>=10.0 && data.power<10.0) || (preW>=20.0 && data.power<20.0) || (preW<10.0 && data.power>=10.0))
-    {ucg.drawBox(108, 12, 51, 18);}
-  outputEnabled?SET_W_COLOR:ucg.setColor(0, 90, 90, 90); // default color is gray
-  data.power<10.0?ucg.setPrintPos(116, 29):(data.power>=20.0?ucg.setPrintPos(115, 29):ucg.setPrintPos(113, 29));
-  ucg.print(data.power, data.power<= 10.0?2:(data.power<100.0?1:0));
+  if ((preW >= 10.0 && data.power < 10.0) || (preW >= 20.0 && data.power < 20.0) || (preW < 10.0 && data.power >= 10.0))
+  {
+    ucg.drawBox(108, 12, 51, 18);
+  }
+  outputEnabled ? SET_W_COLOR : ucg.setColor(0, 90, 90, 90); // default color is gray
+  data.power < 10.0 ? ucg.setPrintPos(116, 29) : (data.power >= 20.0 ? ucg.setPrintPos(115, 29) : ucg.setPrintPos(113, 29));
+  ucg.print(data.power, data.power <= 10.0 ? 2 : (data.power < 100.0 ? 1 : 0));
   ucg.setPrintPos(128, 50);
   ucg.print("W");
 
-  preV=data.voltage;
-  preI=data.current;
-  preW=data.power;
+  preV = data.voltage;
+  preI = data.current;
+  preW = data.power;
 }
 
 // draw round icon indicating power output status
