@@ -1,10 +1,9 @@
 /*
  * Draws analog gauges using the UCGlibrary by Oliver
+ * Copyright (c) 2022 Giovanni Bernardo, Paolo Loberto.
  * 
  * derived from https://github.com/Cyb3rn0id/Analog_Gauge_Arduino
  * derived from a "Bodmer" instructable : https://www.instructables.com/Arduino-sketch-for-a-retro-analogue-meter-graphic-/
- * 
- * Copyright (c) 2022 Giovanni Bernardo, Paolo Loberto.
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

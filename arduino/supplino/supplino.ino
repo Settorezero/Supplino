@@ -1,30 +1,29 @@
 /*
-   SUPPLINO
-   "quick&dirty PSU"
-   by @cyb3rn0id and @mrloba81
-   https://www.github.com/settorezero/supplino
-
-   Copyright (c) 2022 Giovanni Bernardo, Paolo Loberto.
-
-   This program is free software: you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation, either version 3 of the License, or
-   (at your option) any later version.
-
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with this program. If not, see <http://www.gnu.org/licenses/>.
-*/
+ * SUPPLINO : A Quick & Dirty PSU
+ * Copyright (c) 2022 Giovanni Bernardo, Paolo Loberto.
+ * 
+ * https://www.github.com/settorezero/supplino
+ * 
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 #define SUPPLINO_VERSION "1.0"
 
 #include <Arduino.h>
 #include <SPI.h>
 #include "Ucglib.h" // Ucglib by Oliver (reference: https://github.com/olikraus/ucglib/wiki/reference)
 #include "gauge.hpp"
+#include "acs712.hpp"
 
 // ST7735 display to Arduino nano connections:
 // CLK    : 13 (or SCL)
@@ -48,9 +47,7 @@ Ucglib_ST7735_18x128x160_HWSPI ucg(9, 10, 8);
 // constants
 // note: XL4016E1 IC accept from 4 to 40V at input, and outputs from 1.25 to 36V
 #define RELAYON     LOW // relay module used is active low => turns on when low level is sent
-#define IREADINGS   200 // number of analog readings for current
-#define VREADINGS    20 // number of analog readings for voltage
-#define CURRENTMAX    5 // A
+#define CURRENTMAX    2 // A
 #define VOLTAGEMAX   33 // V
 #define VOLTAGEMIN    1 // V - used for undervoltage alarm, see "ADC_UNDERVOLTAGEALARM" below
 #define POWERMAX      CURRENTMAX*VOLTAGEMAX // W
@@ -77,12 +74,12 @@ Ucglib_ST7735_18x128x160_HWSPI ucg(9, 10, 8);
 #define SET_W_COLOR ucg.setColor(0, 204, 204, 0)
 
 // voltage adjustment
-#define VOLT_ADJ(V)  V // for no correction
-//#define VOLT_ADJ(V) V+0.1 // your own formula
+//#define VOLT_ADJ(V)  V // for no correction
+#define VOLT_ADJ(V) V+0.2F // your own formula
 
 // current adjustment
-// #define CURR_ADJ(I) I // for no correction
-#define CURR_ADJ(I) I-0.09 // your own formula
+//#define CURR_ADJ(I) I // for no correction
+#define CURR_ADJ(I) I-0.015F // your own formula
 
 Gauge gauge(&ucg); // analog gauge instance
 // constants used for the analog gauge
@@ -91,6 +88,12 @@ Gauge gauge(&ucg); // analog gauge instance
 #define G_ARC 120
 #define G_RADIUS 30
 
+enum gaugeType {
+  V,
+  I,
+  W
+};
+
 enum alarmType {
   no_alarm,
   over_load,
@@ -98,23 +101,13 @@ enum alarmType {
   under_voltage,
 };
 
-enum gaugeType {
-  V,
-  I,
-  W
-};
-
-struct readData {
-  float voltage = 0;
-  float current = 0;
-  float power = 0;
-  float currentCalibration = 512; // ADC zero offset for ACS current sensor (=2.5V)
-} data;
-
 alarmType alarm = no_alarm;
+
 gaugeType showedGauge = V;
 volatile bool outputEnabled = false; // output relay detached
-volatile bool skipInterrupt = false;
+volatile bool skipInterrupt = true;
+
+ACS712 acs712(VOLTAGE_SENSE, CURRENT_SENSE, ADCCONV, ACSCONST);
 //------------------------------------------------------------------------------------------------------------
 
 // toggle relay allowing power output
@@ -131,19 +124,21 @@ void outputDisable(void)
   digitalWrite(RELAY, !RELAYON);
 }
 
-// Interrupt Service Routine at button low level
+// Interrupt Service Routine at button state change
+// from low to high (button release)
 void ISR_buttonPress(void)
 {
-  noInterrupts(); // disable interrupts
+  static long lastPress = 0;
   
-  if (skipInterrupt)
+  if (skipInterrupt) // routine in the main on the long press said to skip this interrupt
   {
     skipInterrupt = false;
     interrupts();
     return;
   }
+
+  noInterrupts(); // disable interrupts
   
-  static long lastPress = 0;
   if ((millis() - lastPress) < 200)
   {
     // exit if <200mS press
@@ -176,6 +171,7 @@ void setAlarm(alarmType alm)
 
 void setup(void)
 {
+  noInterrupts(); // disable interrupts
   pinMode(RELAY, OUTPUT);
   outputDisable();
   pinMode(BUTTON, INPUT_PULLUP);
@@ -206,8 +202,50 @@ void setup(void)
   ucg.setPrintPos(35, 95);
   ucg.print("MrLoba81");
 
-  // calibrate zero current value and store in currentCalibration struct variable
-  computeReadings(&data, true);
+  acs712.setVoltageAdjustCB([](float &v_val)
+  {
+    // voltage from divider output to voltage on divider input
+    // and user adjustment
+    return VOLT_ADJ(v_val / DIVIDERCONST);
+  });
+
+  acs712.setCurrentAdjustCB([](float &i_val)
+  {
+    // user adjustment
+    return CURR_ADJ(i_val);
+  });
+
+  acs712.setVoltageCheckCB([](uint16_t &v_val)
+  {
+    // quickly check a short-circuit
+    if (v_val < ADC_UNDERVOLTAGEALARM)
+    {
+      setAlarm(under_voltage);
+      return false;
+    }
+    // quickly check an over-voltage. Dunno if useful or not, maybe a broken switching module can output voltage unregulated?
+    if (v_val > ADC_OVERVOLTAGEALARM)
+    {
+      setAlarm(over_voltage);
+      return false;
+    }
+    return true;
+  });
+
+  acs712.setCurrentCheckCB([](uint16_t &i_val)
+  {
+    if (i_val > acs712.getCurrentCalibration() + ADC_CURRENTALARM)
+    {
+      setAlarm(over_load);
+      return false;
+    }
+
+    return true;
+  });
+
+  // calibrate zero current value
+  outputDisable(); // disable output in calibration mode
+  acs712.computeReadings(true);
 
   delay(1500);
 
@@ -229,24 +267,25 @@ void setup(void)
   // led border
   ucg.drawDisc(135, 94, 17, UCG_DRAW_ALL);
 
-  // enable interrupt on button pressing
+  // enable interrupt on button release
   attachInterrupt(digitalPinToInterrupt(BUTTON), ISR_buttonPress, RISING);
+  delay(500);
+  interrupts();
 }
-
 
 void loop(void)
 {
   static unsigned long lastCheck = millis();
-  if (digitalRead(BUTTON) == LOW)
+  if (digitalRead(BUTTON) == LOW) // interrupt not happened: ISR will fire after button will be released
   {
-    if (millis() - lastCheck >= 1000) {
+    if (millis() - lastCheck >= 1000) { // button pressed for more than a second
       skipInterrupt = true;
       showedGauge = showedGauge == V ? I : (showedGauge == I ? W : V);
       drawGaugeScale();
       updateGauge();
       lastCheck = millis();
     }
-  } else {
+  } else { // button not pressed
     lastCheck = millis();
   }
   // re-set font since gauge uses another kind of font
@@ -255,87 +294,11 @@ void loop(void)
   ucg.setPrintDir(0);
 
   // update values
-  computeReadings(&data, false);
+  acs712.computeReadings(false);
   printValues();
   updateGauge();
   outputIcon();
 }
-
-// compute readings fuction
-// calibration=true => don't read voltage and store zero current value (calibration)
-// calibration=false =>  read voltage too and use current calibration value to adjust the current value
-void computeReadings(readData *data, bool calibration)
-{
-  float i_val = 0.0; // current value (Ampere)
-  float v_val = 0.0 ; // voltage value (Volt)
-  uint16_t anValue = 0; // ADC raw readings from ACS sensor and from voltage divider
-  uint8_t i = 0; // generic counter
-
-  if (calibration) outputDisable(); // disable output if in calibration mode
-
-  // read current value
-  for (i = 0; i < IREADINGS; i++)
-  {
-    anValue = analogRead(CURRENT_SENSE);
-    // quickly detect an overload. This occurs also in case of a short-circuit
-    if (anValue > data->currentCalibration + ADC_CURRENTALARM)
-    {
-      setAlarm(over_load);
-      return; // exit from function
-    }
-    i_val += anValue;
-  } // end current reading cycle
-  i_val /= IREADINGS; // average
-
-  // calibration mode=>store average value from ADC as ZERO (OFFSET) current
-  if (calibration)
-  {
-    data->currentCalibration = i_val;
-    return; // exit from function
-  }
-  else // is not calibration
-  {
-    // normally you'll subtract an 2.5V offset, but better read the standby value (previous functions)
-    // and then subtract that value (anyway in good conditions would be around 2.5V => around 512)
-    i_val = i_val - data->currentCalibration;
-    // turn (eventually) negative value in positive since we're working only on DC
-    // and can happen we wired the current sensor in inverse way
-    if (i_val < 0) i_val *= -1;
-    // compute current value in Ampere
-    i_val *= ADCCONV; // ADC to voltage in V
-    i_val /= ACSCONST; // Voltage to Ampere using the sensor constant
-    i_val = CURR_ADJ(i_val); // user adjustment
-    if (i_val < 0) i_val = 0; // if user adjustment makes value less than zero, turn to zero
-    data->current = i_val; // store value for gauges
-  }
-
-  // read voltage (and compute power) too if not in calibration mode
-  if (!calibration)
-  {
-    for (i = 0; i < VREADINGS; i++)
-    {
-      anValue = analogRead(VOLTAGE_SENSE);
-      // quickly check a short-circuit
-      if (anValue < ADC_UNDERVOLTAGEALARM)
-      {
-        setAlarm(under_voltage);
-        return;
-      }
-      // quickly check an over-voltage. Dunno if useful or not, maybe a broken switching module can output voltage unregulated?
-      if (anValue > ADC_OVERVOLTAGEALARM)
-      {
-        setAlarm(over_voltage);
-        return;
-      }
-      v_val += anValue;
-    } // end voltage reading cycle
-    v_val /= VREADINGS; // average
-    v_val *= ADCCONV;// ADC to voltage in V
-    v_val /= DIVIDERCONST; // voltage from divider output to voltage on divider input
-    data->voltage = VOLT_ADJ(v_val); // user adjustment
-    data->power = data->voltage * data->current; // active power
-  } // not current calibration => read voltage too
-} // \computeReadings
 
 // draw Analog gauge scale
 void drawGaugeScale(void)
@@ -366,7 +329,7 @@ void updateGauge(void)
   switch (showedGauge)
   {
     case I:
-      gauge.drawPointer(G_X, G_Y, G_ARC, G_RADIUS, data.current, 0, CURRENTMAX);
+      gauge.drawPointer(G_X, G_Y, G_ARC, G_RADIUS, acs712.getCurrent(), 0, CURRENTMAX);
       ucg.setFontMode(UCG_FONT_MODE_SOLID);
       ucg.setFont(ucg_font_orgv01_hf);
       ucg.setPrintPos(G_X - 16, G_Y);
@@ -375,7 +338,7 @@ void updateGauge(void)
       break;
 
     case W:
-      gauge.drawPointer(G_X, G_Y, G_ARC, G_RADIUS, data.power, 0, POWERMAX);
+      gauge.drawPointer(G_X, G_Y, G_ARC, G_RADIUS, acs712.getPower(), 0, POWERMAX);
       ucg.setFontMode(UCG_FONT_MODE_SOLID);
       ucg.setFont(ucg_font_orgv01_hf);
       ucg.setPrintPos(G_X - 13, G_Y);
@@ -384,7 +347,7 @@ void updateGauge(void)
       break;
 
     default:
-      gauge.drawPointer(G_X, G_Y, G_ARC, G_RADIUS, data.voltage, 0, VOLTAGEMAX);
+      gauge.drawPointer(G_X, G_Y, G_ARC, G_RADIUS, acs712.getVoltage(), 0, VOLTAGEMAX);
       ucg.setFontMode(UCG_FONT_MODE_SOLID);
       ucg.setFont(ucg_font_orgv01_hf);
       ucg.setPrintPos(G_X - 13, G_Y);
@@ -404,21 +367,21 @@ void printValues()
   // draw a black box passing from a value >10 to a value<10
   ucg.setColor(1, 0, 0, 0);
   ucg.setColor(0, 0, 0, 0);
-  if (preV >= 10.0 && data.voltage < 10.0) ucg.drawBox(1, 12, 51, 18);
+  if (preV >= 10.0 && acs712.getVoltage() < 10.0) ucg.drawBox(1, 12, 51, 18);
   outputEnabled ? SET_V_COLOR : ucg.setColor(0, 90, 90, 90); // default color is gray
-  data.voltage < 10.0 ? ucg.setPrintPos(14, 29) : ucg.setPrintPos(8, 29);
-  ucg.print(data.voltage, 1);
+  acs712.getVoltage() < 10.0 ? ucg.setPrintPos(14, 29) : ucg.setPrintPos(8, 29);
+  ucg.print(acs712.getVoltage(), 1);
   ucg.setPrintPos(22, 50);
   ucg.print("V");
 
   // draw a black box passing from a value >10 to a value<10
   ucg.setColor(1, 0, 0, 0);
   ucg.setColor(0, 0, 0, 0);
-  if (preI >= 10.0 && data.current < 10.0) ucg.drawBox(54, 12, 52, 18);
+  if (preI >= 10.0 && acs712.getCurrent() < 10.0) ucg.drawBox(54, 12, 52, 18);
   outputEnabled ? SET_I_COLOR : ucg.setColor(0, 90, 90, 90); // default color is gray
-  data.current < 10.0 ? ucg.setPrintPos(63, 29) : ucg.setPrintPos(60, 29);
-  ucg.print(data.current, data.current >= 10.0 ? 1 : 2);
-  if (data.current >= 10.0) ucg.print(" ");
+  acs712.getCurrent() < 10.0 ? ucg.setPrintPos(63, 29) : ucg.setPrintPos(60, 29);
+  ucg.print(acs712.getCurrent(), acs712.getCurrent() >= 10.0 ? 1 : 2);
+  if (acs712.getCurrent() >= 10.0) ucg.print(" ");
   ucg.setPrintPos(75, 50);
   ucg.print("A");
 
@@ -426,19 +389,19 @@ void printValues()
   // not tested with values over 99.9
   ucg.setColor(1, 0, 0, 0);
   ucg.setColor(0, 0, 0, 0);
-  if ((preW >= 10.0 && data.power < 10.0) || (preW >= 20.0 && data.power < 20.0) || (preW < 10.0 && data.power >= 10.0))
+  if ((preW >= 10.0 && acs712.getPower() < 10.0) || (preW >= 20.0 && acs712.getPower() < 20.0) || (preW < 10.0 && acs712.getPower() >= 10.0))
   {
     ucg.drawBox(108, 12, 51, 18);
   }
   outputEnabled ? SET_W_COLOR : ucg.setColor(0, 90, 90, 90); // default color is gray
-  data.power < 10.0 ? ucg.setPrintPos(116, 29) : (data.power >= 20.0 ? ucg.setPrintPos(115, 29) : ucg.setPrintPos(113, 29));
-  ucg.print(data.power, data.power <= 10.0 ? 2 : (data.power < 100.0 ? 1 : 0));
+  acs712.getPower() < 10.0 ? ucg.setPrintPos(116, 29) : (acs712.getPower() >= 20.0 ? ucg.setPrintPos(115, 29) : ucg.setPrintPos(113, 29));
+  ucg.print(acs712.getPower(), acs712.getPower() <= 10.0 ? 2 : (acs712.getPower() < 100.0 ? 1 : 0));
   ucg.setPrintPos(128, 50);
   ucg.print("W");
 
-  preV = data.voltage;
-  preI = data.current;
-  preW = data.power;
+  preV = acs712.getVoltage();
+  preI = acs712.getCurrent();
+  preW = acs712.getPower();
 }
 
 // draw round icon indicating power output status
@@ -446,7 +409,7 @@ void outputIcon(void)
 {
   if (outputEnabled)
   {
-    ucg.setColor(0, 15, 255, 15); // green
+    ucg.setColor(0, 0, 255, 0); // green
   }
   else
   {
