@@ -127,7 +127,10 @@ bool ACS712::computeReadings(bool calibration)
     }
 
     this->voltage = v_val;
-    this->power = this->voltage * this->current; // active power
+    if (this->current<.01)
+      {this->power=0;}
+    else
+      {this->power = this->voltage * this->current;} // active power
 
     return true;
   } // not current calibration => read voltage too

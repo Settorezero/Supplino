@@ -170,14 +170,16 @@ void setAlarm(alarmType alm)
 }
 
 void setup(void)
-{
-  noInterrupts(); // disable interrupts
+  {
   pinMode(RELAY, OUTPUT);
   outputDisable();
   pinMode(BUTTON, INPUT_PULLUP);
-  Serial.begin(9600);
-  delay(1000);
-
+  Serial.begin(57600);
+  delay(200);
+  Serial.print("Supplino V.");
+  Serial.println(SUPPLINO_VERSION);
+  Serial.println("By Cyb3rn0id and MrLoba81");
+  
   ucg.begin(UCG_FONT_MODE_TRANSPARENT);
   ucg.clearScreen();
   ucg.setRotate270(); // 90=display horizontal (landscape) with data header on the left
@@ -245,6 +247,7 @@ void setup(void)
 
   // calibrate zero current value
   outputDisable(); // disable output in calibration mode
+  Serial.println("Zeroing current sensor");
   acs712.computeReadings(true);
 
   delay(1500);
@@ -269,8 +272,8 @@ void setup(void)
 
   // enable interrupt on button release
   attachInterrupt(digitalPinToInterrupt(BUTTON), ISR_buttonPress, RISING);
-  delay(500);
-  interrupts();
+  delay(100);
+  Serial.println("Setup done");
 }
 
 void loop(void)
