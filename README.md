@@ -48,7 +48,9 @@ Most of non-original Arduino Nano boards requires to be configured in Arduino ID
 
 We've designed 2 different enclosures. They're both based on the [Ultimate Box Maker](https://www.thingiverse.com/thing:1264391) by "HeartMan" on Thingiverse and are made for modules we used and listed in the "required parts" paragraph.
 
-You can download and customize the original enclosure project from Thingiverse if you want to make your own enclosure. See [/cad/stl folder](/cad/stl) for further informations on provided STLs to be 3Dprinted.
+You can download and customize the original enclosure project from Thingiverse if you want to make your own enclosure. See [/cad/stl folder](/cad/stl) for further informations on provided STLs to be 3Dprinted.  
+  
+In the part list are listed 2 protoboards to be used with the Enclosure Variant1 : The 50x70 one will house connectors, LM2596 buck converter, Arduino Nano and components. The 30x70 protoboard will house the level shifter and the display.  
 
 ### Schematic
 
@@ -68,6 +70,8 @@ Internal parts:
 - [DC/DC Buck converter XH-M401 - XL4016E1](https://amzn.to/3doaTaZ)
 - [Relay Module](https://amzn.to/31yBUpw)
 - [**Original** Arduino Nano Every](https://amzn.to/3qYmN1V) OR [**non original** Arduino Nano (classic)](https://amzn.to/3rADJxe) 
+- [Protoboard 50x70 (link to protoboard kit)](https://amzn.to/34U1kQ4)
+- [Protoboard 30x70) (link to protoboard kit)](https://amzn.to/34U1kQ4)
 
 
 External/Panel mount parts:
@@ -80,6 +84,7 @@ External/Panel mount parts:
 
 Other parts
 - [M3 Brass inserts](https://amzn.to/3EF1RlO)
+- Adviced: [Crimping tool kit with Dupont and JST connectors](https://amzn.to/3Ik13nW)
 
 
 ### Notes
