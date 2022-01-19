@@ -71,7 +71,7 @@ Internal parts:
 - [Relay Module](https://amzn.to/31yBUpw)
 - [**Original** Arduino Nano Every](https://amzn.to/3qYmN1V) OR [**non original** Arduino Nano (classic)](https://amzn.to/3rADJxe) 
 - [Protoboard 50x70 (link to protoboard kit)](https://amzn.to/34U1kQ4)
-- [Protoboard 30x70) (link to protoboard kit)](https://amzn.to/34U1kQ4)
+- [Protoboard 30x70 (link to protoboard kit)](https://amzn.to/34U1kQ4)
 
 
 External/Panel mount parts:
