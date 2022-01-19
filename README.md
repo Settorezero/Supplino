@@ -61,7 +61,7 @@ Please note : the resistor/capacitor on the pushbutton is strongly required for 
 Following links contains an affiliation code for Italian Users so we can earn money if you buy something from following links (only valid for Amazon.it)
 
 Internal parts:
-- [1.8" 128x160 Display](https://amzn.to/3pBmids)
+- [1.8" 128x160 Display (ST7735)](https://amzn.to/3pBmids)
 - [8bit Level Shifter - TXS0108E](https://amzn.to/3DoPg4V)
 - [Current sensor 20A - ACS712](https://amzn.to/3osdSWe)
 - [DC/DC Buck converter - LM2596s](https://amzn.to/3Ghmcyd)
