@@ -1,8 +1,8 @@
 # Supplino
 
-**THIS IS STILL A WORK IN PROGRESS**
-
 Supplino is a _Quick & Dirty_ PSU (_Power Supply Unit_) made with some widely available breakout boards, an Arduino Nano (or an Arduino Nano Every) and a graphical LCD.
+
+![Supplino](/media/supplino_github.jpg)  
 
 Power output is given by a DC/DC buck converter based on the XL4016E1 IC. Regarding the power input, we prefer feeding it through an external 20÷30V brick PSU such as the ones used for laptops or old printers: this solution is safe, but you can choose to use a larger enclosure and then include internally your own transformer+diode bridge+capacitors. Also the voltage regulation module can be changed.
 
@@ -20,7 +20,16 @@ We named it Supplino since we like a lot an italian snack typical of the roman c
 
 The XH-M401 module is based around the XL4016E1 buck converter IC. It can accept as input 4÷40V and gives an output 1.25÷36V. Manufacturer of those boards states a maximum output current of 5A that can be increased up to 8A by adding a fan, anyway we never used it for currents above 2A. This module has a switch-potentiometer for turning on/off the module and adjust the output voltage. The output current is fixed to the maximum allowable by the buck converter.
 
-For using this module with enclosure we've designed and provided here you must remove the switch-potentiometer and then connect to the pads a 50K Multi-turn Potentiometer and then close with a piece of wire the switch pads (you'll turn on/off the module with a panel switch). Is not adviced using a normal/single-turn potentiometer since you'll not be able to adjust the voltage in a stable manner.
+For using this module with enclosure we've designed and provided here you must remove the switch-potentiometer:
+
+![module mod](media/XH-M401_mod_01.jpg)
+ 
+and then connect to the pads a 50K Multi-turn Potentiometer (better if used a JST-XH 3 pin connector) and then close with a piece of wire the switch pads (you'll turn on/off the module with a panel switch):
+
+![module mod](media/XH-M401_mod_02.jpg)
+![module mod](media/XH-M401_mod_03.jpg)
+
+Is not adviced using a normal/single-turn potentiometer since you'll not be able to adjust the voltage in a stable manner.
 
 - More info about the XH-M401 module: [(link)](https://www.instagram.com/p/CVqZ94OLAFN/)
 - How to remove the switch-potentiometer and attach a new multi-turn one: [(link)](https://www.instagram.com/p/CWJXj0tLJGL/)
@@ -31,9 +40,9 @@ A new model of this module exists having also the possibility to regulate (_limi
 
 1) Feed power in the buck converter module (LM2596s) used for giving 5V to logics. Turn the trimmer until you read 5.00V with a multimeter on the output pads. Usually a lot of turns are needed: if nothing happens after a lot of turns, try to turn in the opposite way.
 
-2) Modify the buck converter module (XH-M401) for having the external multi-turn potentiomer and close the switch pads.
+2) Modify the buck converter module (XH-M401) for having the external multi-turn potentiomer and close the switch pads as explained above.
 
-3) After you mounted all, first than attach the Arduino, check with a multimeter all the connections. Follow the schematic below.
+3) After you mounted all, first than attach the Arduino, check with a multimeter all the connections. Follow the schematic.
 
 ### About Arduino Nano / Every
 
