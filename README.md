@@ -89,6 +89,7 @@ External/Panel mount parts:
 - [Toggle Switch](https://amzn.to/3lFTNtJ)
 - [Banana socket](https://amzn.to/3opLQuq)
 - [Panel Barrel jack socket 5.5x2.1](https://amzn.to/3IrCOW2)
+- Optional: [Panel USB-B to MINI-USB connector](https://amzn.to/3AdUpwO)(valid only if your board has MINI instead of MICRO USB)
 - Panel Fuse-Holder + fuse based on your needs
 
 Other parts
