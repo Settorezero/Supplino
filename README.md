@@ -1,8 +1,8 @@
 # Supplino
 
-**THIS IS STILL A WORK IN PROGRESS**
-
 Supplino is a _Quick & Dirty_ PSU (_Power Supply Unit_) made with some widely available breakout boards, an Arduino Nano (or an Arduino Nano Every) and a graphical LCD.
+
+![Supplino](/media/supplino_github.jpg)  
 
 Power output is given by a DC/DC buck converter based on the XL4016E1 IC. Regarding the power input, we prefer feeding it through an external 20÷30V brick PSU such as the ones used for laptops or old printers: this solution is safe, but you can choose to use a larger enclosure and then include internally your own transformer+diode bridge+capacitors. Also the voltage regulation module can be changed.
 
@@ -20,7 +20,16 @@ We named it Supplino since we like a lot an italian snack typical of the roman c
 
 The XH-M401 module is based around the XL4016E1 buck converter IC. It can accept as input 4÷40V and gives an output 1.25÷36V. Manufacturer of those boards states a maximum output current of 5A that can be increased up to 8A by adding a fan, anyway we never used it for currents above 2A. This module has a switch-potentiometer for turning on/off the module and adjust the output voltage. The output current is fixed to the maximum allowable by the buck converter.
 
-For using this module with enclosure we've designed and provided here you must remove the switch-potentiometer and then connect to the pads a 50K Multi-turn Potentiometer and then close with a piece of wire the switch pads (you'll turn on/off the module with a panel switch). Is not adviced using a normal/single-turn potentiometer since you'll not be able to adjust the voltage in a stable manner.
+For using this module with enclosure we've designed and provided here you must remove the switch-potentiometer:
+
+![module mod](media/XH-M401_mod_01.jpg)
+ 
+and then connect to the pads a 50K Multi-turn Potentiometer (better if used a JST-XH 3 pin connector) and then close with a piece of wire the switch pads (you'll turn on/off the module with a panel switch):
+
+![module mod](media/XH-M401_mod_02.jpg)
+![module mod](media/XH-M401_mod_03.jpg)
+
+Is not adviced using a normal/single-turn potentiometer since you'll not be able to adjust the voltage in a stable manner.
 
 - More info about the XH-M401 module: [(link)](https://www.instagram.com/p/CVqZ94OLAFN/)
 - How to remove the switch-potentiometer and attach a new multi-turn one: [(link)](https://www.instagram.com/p/CWJXj0tLJGL/)
@@ -31,9 +40,9 @@ A new model of this module exists having also the possibility to regulate (_limi
 
 1) Feed power in the buck converter module (LM2596s) used for giving 5V to logics. Turn the trimmer until you read 5.00V with a multimeter on the output pads. Usually a lot of turns are needed: if nothing happens after a lot of turns, try to turn in the opposite way.
 
-2) Modify the buck converter module (XH-M401) for having the external multi-turn potentiomer and close the switch pads.
+2) Modify the buck converter module (XH-M401) for having the external multi-turn potentiomer and close the switch pads as explained above.
 
-3) After you mounted all, first than attach the Arduino, check with a multimeter all the connections. Follow the schematic below.
+3) After you mounted all, first than attach the Arduino, check with a multimeter all the connections. Follow the schematic.
 
 ### About Arduino Nano / Every
 
@@ -48,7 +57,9 @@ Most of non-original Arduino Nano boards requires to be configured in Arduino ID
 
 We've designed 2 different enclosures. They're both based on the [Ultimate Box Maker](https://www.thingiverse.com/thing:1264391) by "HeartMan" on Thingiverse and are made for modules we used and listed in the "required parts" paragraph.
 
-You can download and customize the original enclosure project from Thingiverse if you want to make your own enclosure. See [/cad/stl folder](/cad/stl) for further informations on provided STLs to be 3Dprinted.
+You can download and customize the original enclosure project from Thingiverse if you want to make your own enclosure. See [/cad/stl folder](/cad/stl) for further informations on provided STLs to be 3Dprinted.  
+  
+In the part list are listed 2 protoboards to be used with the Enclosure Variant1 : The 50x70 one will house connectors, LM2596 buck converter, Arduino Nano and components. The 30x70 protoboard will house the level shifter and the display.  
 
 ### Schematic
 
@@ -61,13 +72,15 @@ Please note : the resistor/capacitor on the pushbutton is strongly required for 
 Following links contains an affiliation code for Italian Users so we can earn money if you buy something from following links (only valid for Amazon.it)
 
 Internal parts:
-- [1.8" 128x160 Display](https://amzn.to/3pBmids)
+- [1.8" 128x160 Display (ST7735)](https://amzn.to/3pBmids)
 - [8bit Level Shifter - TXS0108E](https://amzn.to/3DoPg4V)
 - [Current sensor 20A - ACS712](https://amzn.to/3osdSWe)
 - [DC/DC Buck converter - LM2596s](https://amzn.to/3Ghmcyd)
 - [DC/DC Buck converter XH-M401 - XL4016E1](https://amzn.to/3doaTaZ)
 - [Relay Module](https://amzn.to/31yBUpw)
 - [**Original** Arduino Nano Every](https://amzn.to/3qYmN1V) OR [**non original** Arduino Nano (classic)](https://amzn.to/3rADJxe) 
+- [Protoboard 50x70 (link to protoboard kit)](https://amzn.to/34U1kQ4)
+- [Protoboard 30x70 (link to protoboard kit)](https://amzn.to/34U1kQ4)
 
 
 External/Panel mount parts:
@@ -76,10 +89,12 @@ External/Panel mount parts:
 - [Toggle Switch](https://amzn.to/3lFTNtJ)
 - [Banana socket](https://amzn.to/3opLQuq)
 - [Panel Barrel jack socket 5.5x2.1](https://amzn.to/3IrCOW2)
+- Optional: [Panel USB-B to MINI-USB connector](https://amzn.to/3AdUpwO)(valid only if your board has MINI instead of MICRO USB)
 - Panel Fuse-Holder + fuse based on your needs
 
 Other parts
 - [M3 Brass inserts](https://amzn.to/3EF1RlO)
+- Adviced: [Crimping tool kit with Dupont and JST connectors](https://amzn.to/3Ik13nW)
 
 
 ### Notes
