@@ -35,7 +35,7 @@ We've used [this cable](https://amzn.to/3AdUpwO) but warning: this specific cabl
 
 
 #### Variant_02 (made by @MrLoba81)
-- Dimensions: 160x155x55 (Width x Depth x Height)
+- Dimensions: 140x155x55 (Width x Depth x Height)
 - Thickness: 2mm
 
 There are 2 sets of 4 feets: one is for the XH-M401 module (switching regulator based on the XL4016E) and another for a 50x70 protoboard. You must insert M3 6mm brass inserts in the feets.
