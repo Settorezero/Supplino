@@ -4,7 +4,11 @@ Supplino is a _Quick & Dirty_ PSU (_Power Supply Unit_) made with some widely av
 
 ![Supplino](/media/supplino_github.jpg)  
 
-Power output is given by a DC/DC buck converter based on the XL4016E1 IC. Regarding the power input, we prefer feeding it through an external 20÷30V brick PSU such as the ones used for laptops or old printers: this solution is safe, but you can choose to use a larger enclosure and then include internally your own transformer+diode bridge+capacitors. Also the voltage regulation module can be changed.
+Supplino is the circuit between a costant current power source you choose and your target load. This is a flowchart showing how Supplino is made:
+
+![Supplino Flowchart](/media/supplino_flowchart.png)
+
+Power output is given by a DC/DC buck converter based on the XL4016E1 IC. Regarding the power source, we prefer feeding it through an external 20÷30V brick PSU such as the ones used for laptops or old printers: this solution is safe, but you can choose to use a larger enclosure and then include internally your own transformer+diode bridge+capacitors. Also the voltage regulation module can be changed.
 
 Arduino does not manage the buck converter module but only measures output voltage and current (through a current sensor) and then shows those values on a display. Power value is showed too. An additional analog gauge can be configured for showing voltage, current or power value giving some retro style to the graphics.
 
