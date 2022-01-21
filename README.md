@@ -104,3 +104,11 @@ Other parts
 ### Notes
 
 The ACS712 is not the best current sensor in the world and we know, but is cheap and easily available. You'll notice some current variations also in stand-by with nothing attached: it's the price to pay. Is not a professional instrument but a diy project for non critical/hobbystic use.
+
+### Links
+
+- [Hackster.io](https://www.hackster.io/settorezero/supplino-diy-psu-2a47be)
+- [Arduino Blog Post](https://blog.arduino.cc/2022/01/20/supplino-is-a-variable-benchtop-power-supply-that-you-can-build-yourself/)
+- [Settorezero Tweet](https://twitter.com/settorezero/status/1483874052972425216?s=20)
+- [Arduino Tweet](https://twitter.com/arduino/status/1484186316246036481?s=20)
+- [Microchip Makes Tweet](https://twitter.com/MicrochipMakes/status/1483866954251309057?s=20)
