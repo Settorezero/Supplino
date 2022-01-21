@@ -35,11 +35,23 @@ We've used [this cable](https://amzn.to/3AdUpwO) but warning: this specific cabl
 
 
 #### Variant_02 (made by @MrLoba81)
+
 - Dimensions: 140x155x55 (Width x Depth x Height)
 - Thickness: 2mm
 
-There are 2 sets of 4 feets: one is for the XH-M401 module (switching regulator based on the XL4016E) and another for a 50x70 protoboard. You must insert M3 6mm brass inserts in the feets.
+![Variant 2 enclosure](../../media/enclosure_variant_02_01.jpg)
+
+Internally There are 2 sets of 4 feets: one is for the XH-M401 module (switching regulator based on the XL4016E) and another for a 50x70 protoboard. You must insert M3 6mm brass inserts in the feets.  
+
+![Variant 2 enclosure](../../media/enclosure_variant_02_02.jpg)
+
 There are 2 slots too: one for the relay module and another for the  LM2596S step-down regulator. Arduino Nano and current sensor ACS712 breakbout board will be mounted on the protoboard.
+
+![Variant 2 enclosure](../../media/enclosure_variant_02_03.jpg)
+
 Front panel contains pushbutton, display, output sockets, potentiometer
 Back panel contains toggle switch, input socket, fuse holder
 
+![Variant 2 enclosure](../../media/enclosure_variant_02_04.jpg)
+
+In this folder there is a knob for the potentiometer too: obviously you can use the knob also with the variant 1 enclosure.
